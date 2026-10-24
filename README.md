@@ -55,9 +55,30 @@ Crystal Reports do not run on macOS/Linux. Build outputs (`bin/`, `obj/`,
 `*.suo`, `*.user`, `*.exe`, `*.dll`) are excluded from this repository
 via `.gitignore`.
 
+## Live Demo
+
+Try it in your browser, no install needed:
+
+**https://rishabh4630.github.io/Ticket-Booking-Platform/**
+
+The demo runs fully in your browser (accounts and bookings live only in
+that browser, demo data only) — it mirrors the web version below.
+
 ## Cross-platform web version
 
-A Python + Flask + SQLite web version (in `cross_platform_web/`,
-same approach as the Airline Reservation System project) is being added
-so the system runs on Windows, macOS and Linux with no Oracle or
-Crystal Reports install, plus a static live demo on GitHub Pages.
+A Python + Flask + SQLite web version lives in `cross_platform_web/`
+(same approach as the Airline Reservation System project), so the system
+runs on Windows, macOS and Linux with no Oracle or Crystal Reports install.
+
+Run it:
+
+```bash
+cd cross_platform_web
+bash run_mac_linux.sh        # macOS / Linux
+# or on Windows: run_windows.bat
+```
+
+Then open http://127.0.0.1:5000 — sign up, log in, manage masters,
+book tickets (fare = seats × the transport's major rate), view reports
+(admin only). The owner email `rishabhsingh4630@gmail.com` becomes admin
+automatically on login (please confirm this is the right owner email).
