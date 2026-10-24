@@ -1,0 +1,8 @@
+bin/
+obj/
+*.suo
+*.vbproj.user
+*.exe
+*.dll
+*.pdb
+*.log
