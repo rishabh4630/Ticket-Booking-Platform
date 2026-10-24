@@ -6,3 +6,5 @@ obj/
 *.dll
 *.pdb
 *.log
+__pycache__/
+*.db

@@ -9,6 +9,40 @@ with an **Oracle** database and Crystal Reports.
 > `ModConnection.vb` (and the transaction/report forms) before running the
 > original application. The original demo login was `aaa` / `aaa`.
 
+## Quick links
+
+- **Live Demo (browser, no install):** https://rishabh4630.github.io/Ticket-Booking-Platform/
+- **Web version (Windows, Mac, Linux):** [`cross_platform_web/`](cross_platform_web/) — run it with `run_mac_linux.sh` or `run_windows.bat`
+- **Original project (Windows-only):** [`original/TSN - Ticket Booking/`](original/TSN%20-%20Ticket%20Booking/)
+- **Documents & diagrams:** [`docs/`](docs/)
+
+## Repository structure
+
+```
+Ticket-Booking-Platform/
+├── README.md                  This file — overview, screens, structure
+├── .gitignore                 Excludes build outputs, caches, local databases
+├── original/
+│   └── TSN - Ticket Booking/  Original VB.NET WinForms + Oracle project (untouched,
+│                              except Oracle passwords replaced with a placeholder)
+│       ├── *.vb / *.resx      Forms F1–F12, reports R1–R6, modules
+│       ├── *.rpt              Crystal Reports files
+│       └── *.sln / *.vbproj   Visual Studio solution and project
+├── cross_platform_web/        Python + Flask + SQLite version (runs everywhere)
+│   ├── app.py                 Single-file web app
+│   ├── requirements.txt       Flask>=3.0
+│   ├── run_mac_linux.sh       macOS/Linux launcher
+│   ├── run_windows.bat        Windows launcher
+│   └── README.md              How to run, fare rule, booking rules, seed data
+└── docs/                      Original documentation and database scripts
+    ├── TransServiceNetMainDoc1.doc   Main project documentation
+    ├── tables/                Oracle table scripts (tnstb.sql, tnstb.txt)
+    └── dfd-erd/               Data-flow and ER diagrams (.ppt)
+```
+
+Live demo source (GitHub Pages) lives on the `gh-pages` branch as a single
+`index.html` — it mirrors the web version in the browser only.
+
 ## What it does
 
 From the main menu (**Screens**):
