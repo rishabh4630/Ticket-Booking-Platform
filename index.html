@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSN Ticket Booking — Live Demo</title>
+<style>
+:root{--navy:#063B78;--blue:#0878D1;--light:#EAF5FF;--bg:#f4f8fc;--surface:#fff;--ink:#12283e;--muted:#5d6f84;--line:#dbe7f3;--shadow:0 10px 30px rgba(6,59,120,.10)}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif;margin:0;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:10}
+.topbar{max-width:1100px;margin:0 auto;padding:12px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.topbar a{color:#fff;text-decoration:none;font-weight:600;cursor:pointer}
+.topbar a.cta{background:var(--blue);padding:7px 14px;border-radius:999px}
+.brand{font-size:1.15rem;margin-right:auto}
+.brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}
+main{max-width:1100px;margin:0 auto;padding:22px 20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
+.hero{background:linear-gradient(120deg,var(--navy),var(--blue));color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
+.hero h1{margin:0 0 6px}
+.hero p{margin:0;color:#dbeeff}
+.demo-note{background:#fff8e1;border:1px solid #ffe08a;border-radius:12px;padding:12px 16px;margin-bottom:18px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--muted);font-size:.85rem;text-transform:uppercase}
+label{display:block;margin:10px 0 4px;font-weight:600}
+input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;font-size:1rem}
+button,.btn{background:var(--blue);color:#fff;border:0;padding:10px 18px;border-radius:10px;font-size:1rem;cursor:pointer;text-decoration:none;display:inline-block}
+button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.flash{background:#fff3cd;border:1px solid #ffe08a;padding:10px 14px;border-radius:10px;margin-bottom:16px}
+.muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.stat b{font-size:1.8rem;color:var(--navy)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tabs button{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.tabs button.active{background:var(--navy);color:#fff}
+.pill{display:inline-block;background:var(--light);color:var(--navy);border-radius:999px;padding:2px 10px;font-size:.85rem;font-weight:600}
+@media (max-width:600px){main{padding-left:14px;padding-right:14px}}
+</style>
+</head>
+<body>
+<header><div class="topbar">
+<a class="brand" onclick="showView('home')">TSN Ticket Booking<span>Transport Service Network — Live Demo</span></a>
+<a onclick="showView('home')">Home</a>
+<a onclick="showView('masters')">Masters</a>
+<a onclick="showView('booking')">New Booking</a>
+<a onclick="showView('bookings')">Bookings</a>
+<a id="navReports" onclick="showView('reports')" style="display:none">Reports</a>
+<span id="navUser" style="margin-left:auto"></span>
+<a id="navAuth" onclick="showView('auth')">Login</a>
+</div></header>
+<main>
+<div class="demo-note"><b>Demo only.</b> Accounts and bookings live only in this browser (localStorage) and are lost if you clear site data. Seed data below is demo data, not real schedules or fares. Passwords use a simple demo hash — this is <b>not production security</b>. Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</div>
+<div id="flash" class="flash" style="display:none"></div>
+<div id="view-home"></div>
+<div id="view-masters" style="display:none"></div>
+<div id="view-booking" style="display:none"></div>
+<div id="view-bookings" style="display:none"></div>
+<div id="view-ticket" style="display:none"></div>
+<div id="view-reports" style="display:none"></div>
+<div id="view-auth" style="display:none"></div>
+</main>
+<script>
+// ---------- TSN Ticket Booking - static live demo ----------
+// Same seed data, fare rule and booking rules as the Flask web version.
+// Accounts and bookings live only in this browser (localStorage).
+var OWNER_EMAIL = "rishabhsingh4630@gmail.com"; // to-confirm, same as Flask app
+
+// ---------- Seed data (demo data only) ----------
+var SEED = {
+  states: [
+    {code: 1, name: "Uttar Pradesh"},
+    {code: 2, name: "Maharashtra"},
+    {code: 3, name: "Karnataka"},
+    {code: 4, name: "Delhi"}
+  ],
+  cities: [
+    {code: 1, name: "Lucknow"},
+    {code: 2, name: "Mumbai"},
+    {code: 3, name: "Bengaluru"},
+    {code: 4, name: "Delhi"},
+    {code: 5, name: "Varanasi"}
+  ],
+  streets: [
+    {code: 1, name: "MG Road", pin: "226001"},
+    {code: 2, name: "Station Road", pin: "400001"},
+    {code: 3, name: "Civil Lines", pin: "226001"},
+    {code: 4, name: "Brigade Road", pin: "560001"}
+  ],
+  transportTypes: [
+    {id: 1, name: "AC Bus", desc: "Air-conditioned bus"},
+    {id: 2, name: "Non-AC Bus", desc: "Ordinary bus"},
+    {id: 3, name: "Train", desc: "Passenger train"}
+  ],
+  routes: [
+    {id: 1, name: "Lucknow-Delhi", from: "Lucknow", to: "Delhi", via: ["Bareilly", "Moradabad"]},
+    {id: 2, name: "Delhi-Mumbai", from: "Delhi", to: "Mumbai", via: ["Jaipur", "Udaipur"]},
+    {id: 3, name: "Lucknow-Bengaluru", from: "Lucknow", to: "Bengaluru", via: ["Nagpur", "Hyderabad"]}
+  ],
+  transports: [
+    {id: 1, name: "TSN Express", capacity: 40, rMinor: 300, rMajor: 500, from: "Lucknow", to: "Delhi", dep: "06:00", arr: "12:00", typeId: 1, routeId: 1},
+    {id: 2, name: "TSN Deluxe", capacity: 50, rMinor: 400, rMajor: 750, from: "Delhi", to: "Mumbai", dep: "08:00", arr: "20:00", typeId: 1, routeId: 2},
+    {id: 3, name: "TSN Mail", capacity: 120, rMinor: 600, rMajor: 950, from: "Lucknow", to: "Bengaluru", dep: "09:00", arr: "21:00", typeId: 3, routeId: 3},
+    {id: 4, name: "TSN Ordinary", capacity: 45, rMinor: 250, rMajor: 450, from: "Delhi", to: "Mumbai", dep: "07:30", arr: "19:30", typeId: 2, routeId: 2}
+  ],
+  payments: [
+    {id: 1, name: "Cash", amt: 0, desc: "Pay in cash"},
+    {id: 2, name: "Cheque", amt: 0, desc: "Pay by cheque"}
+  ],
+  customers: [
+    {code: 1, name: "Rahul Sharma", age: 30, sex: "Male", address: "12 MG Road", street: 1, city: 1, state: 1, phone: "9876543210"},
+    {code: 2, name: "Priya Verma", age: 27, sex: "Female", address: "45 Civil Lines", street: 3, city: 1, state: 1, phone: "9876501234"}
+  ]
+};
+
+// ---------- Storage ----------
+function load(key, fallback) {
+  try { var v = JSON.parse(localStorage.getItem(key)); return v === null ? fallback : v; }
+  catch (e) { return fallback; }
+}
+function save(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+var addedMasters = load("tsn_added_masters", {states: [], cities: [], streets: [], transportTypes: [], routes: [], transports: [], payments: [], customers: []});
+var bookings = load("tsn_bookings", []); // seed bookings: none, like the Flask app
+var accounts = load("tsn_accounts", []);
+var session = load("tsn_session", null);
+
+function allOf(kind) { return SEED[kind].concat(addedMasters[kind] || []); }
+function typeName(id) { var t = allOf("transportTypes").find(function (x) { return x.id === id; }); return t ? t.name : "-"; }
+function transportById(id) { return allOf("transports").find(function (t) { return t.id === id; }); }
+function customerByCode(code) { return allOf("customers").find(function (c) { return c.code === code; }); }
+function paymentById(id) { return allOf("payments").find(function (p) { return p.id === id; }); }
+
+// ---------- Demo-only password hash (NOT production security) ----------
+function demoHash(str) {
+  var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (var i = 0; i < str.length; i++) {
+    var ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16) + (h1 >>> 0).toString(16);
+}
+
+// ---------- Auth ----------
+function currentUser() { return session; }
+function isAdmin() { return session && session.role === "admin"; }
+function requireLogin() {
+  if (!session) { flashMsg("Please log in first."); showView("auth"); return false; }
+  return true;
+}
+function signUp(name, email, password) {
+  email = email.trim().toLowerCase();
+  if (!name.trim() || !email || !password) return "Name, email and password are required.";
+  if (accounts.some(function (a) { return a.email === email; })) return "That email is already registered. Please log in.";
+  accounts.push({name: name.trim(), email: email, hash: demoHash(password), role: "customer"});
+  save("tsn_accounts", accounts);
+  return null;
+}
+function logIn(email, password) {
+  email = email.trim().toLowerCase();
+  var acc = accounts.find(function (a) { return a.email === email; });
+  if (!acc || acc.hash !== demoHash(password)) return "Invalid email or password.";
+  // Owner email auto-upgrades to admin on login (same as the Flask app).
+  if (acc.email === OWNER_EMAIL && acc.role !== "admin") {
+    acc.role = "admin";
+    save("tsn_accounts", accounts);
+  }
+  session = {name: acc.name, email: acc.email, role: acc.role};
+  save("tsn_session", session);
+  return null;
+}
+function logOut() {
+  session = null;
+  save("tsn_session", null);
+  flashMsg("Logged out.");
+  showView("home");
+}
+
+// ---------- UI helpers ----------
+function esc(s) {
+  return String(s === null || s === undefined ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function flashMsg(msg) {
+  var el = document.getElementById("flash");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(function () { el.style.display = "none"; }, 6000);
+}
+function tableHtml(headers, rows) {
+  if (!rows.length) return "<p>No records yet.</p>";
+  var head = headers.map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("");
+  var body = rows.map(function (r) {
+    return "<tr>" + r.map(function (c) { return "<td>" + esc(c) + "</td>"; }).join("") + "</tr>";
+  }).join("");
+  return "<table><tr>" + head + "</tr>" + body + "</table>";
+}
+function updateNav() {
+  document.getElementById("navReports").style.display = isAdmin() ? "" : "none";
+  document.getElementById("navUser").textContent = session ? session.name + " (" + session.role + ")" : "";
+  document.getElementById("navAuth").textContent = session ? "Logout" : "Login";
+  document.getElementById("navAuth").onclick = session ? logOut : function () { showView("auth"); };
+}
+
+// ---------- Booking logic (mirrors the Flask app) ----------
+function parseSeats(raw) {
+  var seats = [];
+  raw.split(",").forEach(function (part) {
+    part = part.trim();
+    if (part !== "") seats.push(parseInt(part, 10));
+  });
+  return seats;
+}
+function bookedSeatsFor(transportId, travelDate) {
+  var taken = [];
+  bookings.forEach(function (b) {
+    if (b.tid === transportId && b.bookDate === travelDate) {
+      b.seats.forEach(function (s) { taken.push(s); });
+    }
+  });
+  return taken;
+}
+function duplicateSeats(requested, taken) {
+  return requested.filter(function (s) { return taken.indexOf(s) !== -1; });
+}
+function checkCapacity(transport, travelDate, requestedCount) {
+  var taken = bookedSeatsFor(transport.id, travelDate).length;
+  if (taken + requestedCount > transport.capacity) {
+    return "Over capacity: " + taken + " seat(s) already booked, capacity is " +
+      transport.capacity + ", so only " + (transport.capacity - taken) + " more seat(s) are available.";
+  }
+  return null;
+}
+function calcFare(transport, seatCount) { return seatCount * transport.rMajor; }
+function createBooking(transportId, custCode, travelDate, pmodeId, seats) {
+  var transport = transportById(transportId);
+  var customer = customerByCode(custCode);
+  if (!transport || !customer || !travelDate || !seats.length) {
+    return "Transport, customer, date and at least one seat are required.";
+  }
+  if (seats.some(function (s) { return isNaN(s) || s <= 0; }) || new Set(seats).size !== seats.length) {
+    return "Seat numbers must be positive and not repeated in one booking.";
+  }
+  var taken = bookedSeatsFor(transportId, travelDate);
+  var clash = duplicateSeats(seats, taken);
+  if (clash.length) return "Seat(s) already booked for this transport and date: " + clash.sort(function (a, b) { return a - b; }).join(", ") + ".";
+  var capErr = checkCapacity(transport, travelDate, seats.length);
+  if (capErr) return capErr;
+  var nextNo = bookings.reduce(function (m, b) { return Math.max(m, b.bookNo); }, 0) + 1;
+  var booking = {bookNo: nextNo, bookDate: travelDate, custCode: custCode, custName: customer.name,
+    tid: transportId, pmodeId: pmodeId, userEmail: session.email, seats: seats.slice().sort(function (a, b) { return a - b; })};
+  bookings.push(booking);
+  save("tsn_bookings", bookings);
+  return booking;
+}
+function cancelBooking(bookNo) {
+  bookings = bookings.filter(function (b) { return b.bookNo !== bookNo; });
+  save("tsn_bookings", bookings);
+}
+function visibleBookings() {
+  if (isAdmin()) return bookings.slice().sort(function (a, b) { return b.bookNo - a.bookNo; });
+  return bookings.filter(function (b) { return b.userEmail === session.email; })
+    .sort(function (a, b) { return b.bookNo - a.bookNo; });
+}
+
+// ---------- Views ----------
+var MASTER_TABS = [
+  ["transportTypes", "Transport Types"], ["transports", "Transports"], ["routes", "Routes"],
+  ["payments", "Payment Modes"], ["customers", "Customers"], ["streets", "Streets"],
+  ["cities", "Cities"], ["states", "States"]
+];
+var masterTab = "transportTypes";
+
+function renderHome() {
+  var recent = bookings.slice().sort(function (a, b) { return b.bookNo - a.bookNo; }).slice(0, 5);
+  var stats = [
+    ["Transports", allOf("transports").length], ["Routes", allOf("routes").length],
+    ["Customers", allOf("customers").length], ["Bookings", bookings.length]
+  ].map(function (s) {
+    return '<div class="card stat"><div class="muted">' + s[0] + "</div><b>" + s[1] + "</b></div>";
+  }).join("");
+  var rows = recent.map(function (b) {
+    var t = transportById(b.tid);
+    return [b.bookNo, b.bookDate, b.custName, t ? t.name : "-"];
+  });
+  document.getElementById("view-home").innerHTML =
+    '<div class="hero"><h1>Book a ticket in under a minute.</h1>' +
+    "<p>Transports, routes, customers and bookings — the TSN Ticket Booking system as a static demo. No Oracle or Windows needed.</p></div>" +
+    '<div class="grid">' + stats + "</div>" +
+    '<div class="card"><h2>Recent bookings</h2>' + tableHtml(["Booking No", "Date", "Customer", "Transport"], rows) +
+    '<p><button onclick="showView(\'booking\')">New Booking</button> ' +
+    '<button class="secondary" onclick="showView(\'masters\')">Manage Masters</button></p></div>' +
+    '<div class="card"><h2>About this demo</h2><p class="muted">The original project is VB.NET WinForms + Oracle. ' +
+    "This demo keeps the same masters, transactions and reports in the browser. Seed data is demo data. " +
+    "Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</p></div>";
+}
+
+function masterRows(kind) {
+  if (kind === "transportTypes") return allOf("transportTypes").map(function (x) { return [x.id, x.name, x.desc]; });
+  if (kind === "transports") return allOf("transports").map(function (x) {
+    return [x.id, x.name, x.capacity, x.rMinor, x.rMajor, x.from, x.to, x.dep, x.arr, typeName(x.typeId)];
+  });
+  if (kind === "routes") return allOf("routes").map(function (x) { return [x.id, x.name, x.from, x.to, x.via.join(", ")]; });
+  if (kind === "payments") return allOf("payments").map(function (x) { return [x.id, x.name, x.amt, x.desc]; });
+  if (kind === "customers") return allOf("customers").map(function (x) {
+    return [x.code, x.name, x.age, x.sex, x.address, x.phone];
+  });
+  if (kind === "streets") return allOf("streets").map(function (x) { return [x.code, x.name, x.pin]; });
+  if (kind === "cities") return allOf("cities").map(function (x) { return [x.code, x.name]; });
+  if (kind === "states") return allOf("states").map(function (x) { return [x.code, x.name]; });
+  return [];
+}
+var MASTER_HEADERS = {
+  transportTypes: ["ID", "Name", "Description"],
+  transports: ["ID", "Name", "Capacity", "Minor Rate", "Major Rate", "From", "To", "Departs", "Arrives", "Type"],
+  routes: ["ID", "Route", "From", "To", "Via stops"],
+  payments: ["ID", "Mode", "Amount", "Description"],
+  customers: ["Code", "Name", "Age", "Sex", "Address", "Phone"],
+  streets: ["Code", "Street", "PIN"],
+  cities: ["Code", "City"],
+  states: ["Code", "State"]
+};
+var MASTER_FORMS = {
+  transportTypes: [["ttname", "Type name"], ["tdesc", "Description"]],
+  states: [["state_name", "State name"]],
+  cities: [["city_name", "City name"]],
+  streets: [["st_name", "Street name"], ["p_code", "PIN code"]],
+  payments: [["pname", "Payment mode"], ["p_desc", "Description"]],
+  routes: [["r_name", "Route name"], ["st_pos", "Starting point"], ["dest", "Destination"], ["via", "Via stops (comma-separated)"]],
+  transports: [["tname", "Transport name"], ["capacity", "Capacity"], ["r_minor", "Minor rate"], ["r_major", "Major rate (per seat)"], ["st_pos", "Starting point"], ["dest", "Destination"], ["st_time", "Departure time"], ["reach_time", "Arrival time"]],
+  customers: [["cust_name", "Customer name"], ["age", "Age"], ["sex", "Sex"], ["cust_add", "Address"], ["cust_phone", "Phone"]]
+};
+function renderMasters() {
+  var tabs = MASTER_TABS.map(function (t) {
+    return '<button class="' + (masterTab === t[0] ? "active" : "") + '" onclick="masterTab=\'' + t[0] + "';renderMasters()\">" + t[1] + "</button>";
+  }).join("");
+  var title = MASTER_TABS.find(function (t) { return t[0] === masterTab; })[1];
+  var addForm = "";
+  if (isAdmin()) {
+    var fields = MASTER_FORMS[masterTab].map(function (f) {
+      return "<label>" + esc(f[1]) + '<input id="add_' + f[0] + '"></label>';
+    }).join("");
+    addForm = '<div class="card"><h3>Add ' + esc(title) + "</h3>" + fields +
+      '<p><button onclick="addMaster()">Save</button></p>' +
+      '<p class="muted">Admin only. Added rows are saved in this browser only.</p></div>';
+  } else {
+    addForm = '<p class="muted">Adding a master row is admin only — log in with the owner email to add rows.</p>';
+  }
+  document.getElementById("view-masters").innerHTML =
+    "<h2>Masters</h2><div class='tabs'>" + tabs + "</div>" +
+    '<div class="card"><h2>' + esc(title) + "</h2>" +
+    tableHtml(MASTER_HEADERS[masterTab], masterRows(masterTab)) + "</div>" + addForm;
+}
+function nextId(list, key) { return list.reduce(function (m, x) { return Math.max(m, x[key]); }, 0) + 1; }
+function addMaster() {
+  var v = {};
+  MASTER_FORMS[masterTab].forEach(function (f) {
+    v[f[0]] = document.getElementById("add_" + f[0]).value.trim();
+  });
+  var kind = masterTab;
+  if (kind === "transportTypes") {
+    addedMasters.transportTypes.push({id: nextId(allOf("transportTypes"), "id"), name: v.ttname, desc: v.tdesc});
+  } else if (kind === "states") {
+    addedMasters.states.push({code: nextId(allOf("states"), "code"), name: v.state_name});
+  } else if (kind === "cities") {
+    addedMasters.cities.push({code: nextId(allOf("cities"), "code"), name: v.city_name});
+  } else if (kind === "streets") {
+    addedMasters.streets.push({code: nextId(allOf("streets"), "code"), name: v.st_name, pin: v.p_code});
+  } else if (kind === "payments") {
+    addedMasters.payments.push({id: nextId(allOf("payments"), "id"), name: v.pname, amt: 0, desc: v.p_desc});
+  } else if (kind === "routes") {
+    addedMasters.routes.push({id: nextId(allOf("routes"), "id"), name: v.r_name, from: v.st_pos, to: v.dest,
+      via: v.via ? v.via.split(",").map(function (s) { return s.trim(); }).filter(Boolean) : []});
+  } else if (kind === "transports") {
+    addedMasters.transports.push({id: nextId(allOf("transports"), "id"), name: v.tname,
+      capacity: parseInt(v.capacity, 10) || 0, rMinor: parseInt(v.r_minor, 10) || 0,
+      rMajor: parseInt(v.r_major, 10) || 0, from: v.st_pos, to: v.dest, dep: v.st_time, arr: v.reach_time,
+      typeId: allOf("transportTypes")[0] ? allOf("transportTypes")[0].id : 1,
+      routeId: allOf("routes")[0] ? allOf("routes")[0].id : 1});
+  } else if (kind === "customers") {
+    addedMasters.customers.push({code: nextId(allOf("customers"), "code"), name: v.cust_name,
+      age: parseInt(v.age, 10) || 0, sex: v.sex, address: v.cust_add, street: 0, city: 0, state: 0, phone: v.cust_phone});
+  }
+  save("tsn_added_masters", addedMasters);
+  flashMsg("Master row added.");
+  renderMasters();
+}
+
+function renderBooking() {
+  if (!requireLogin()) return;
+  var tOpts = allOf("transports").map(function (t) {
+    return '<option value="' + t.id + '" data-rate="' + t.rMajor + '">' + esc(t.name) + " (" +
+      esc(t.from) + " to " + esc(t.to) + ", " + esc(t.dep) + ") - Rs. " + t.rMajor +
+      " per seat, capacity " + t.capacity + "</option>";
+  }).join("");
+  var cOpts = allOf("customers").map(function (c) {
+    return '<option value="' + c.code + '">' + esc(c.name) + "</option>";
+  }).join("");
+  var pOpts = allOf("payments").map(function (p) {
+    return '<option value="' + p.id + '">' + esc(p.name) + "</option>";
+  }).join("");
+  document.getElementById("view-booking").innerHTML =
+    '<div class="card"><h2>New Booking</h2>' +
+    '<label>Transport<select id="bk_tid">' + tOpts + "</select></label>" +
+    '<label>Customer<select id="bk_cust">' + cOpts + "</select></label>" +
+    '<label>Travel date<input id="bk_date" type="date"></label>' +
+    '<label>Payment mode<select id="bk_pmode">' + pOpts + "</select></label>" +
+    '<label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input id="bk_seats" placeholder="1, 2"></label>' +
+    '<p class="muted" id="bk_total">Fare rule: total = seats &times; the transport\'s major (r_major) rate.</p>' +
+    '<p><button onclick="submitBooking()">Book Tickets</button></p></div>';
+  var upd = function () {
+    var sel = document.getElementById("bk_tid");
+    var rate = parseInt(sel.options[sel.selectedIndex].dataset.rate || "0", 10);
+    var n = document.getElementById("bk_seats").value.split(",").filter(function (s) { return s.trim() !== ""; }).length;
+    document.getElementById("bk_total").textContent = "Fare: " + n + " seat(s) x Rs. " + rate + " = Rs. " + (n * rate) + ".";
+  };
+  document.getElementById("bk_tid").addEventListener("change", upd);
+  document.getElementById("bk_seats").addEventListener("input", upd);
+  upd();
+}
+function submitBooking() {
+  var tid = parseInt(document.getElementById("bk_tid").value, 10);
+  var custCode = parseInt(document.getElementById("bk_cust").value, 10);
+  var pmodeId = parseInt(document.getElementById("bk_pmode").value, 10);
+  var date = document.getElementById("bk_date").value;
+  var seats = parseSeats(document.getElementById("bk_seats").value);
+  var result = createBooking(tid, custCode, date, pmodeId, seats);
+  if (typeof result === "string") { flashMsg(result); return; }
+  var transport = transportById(tid);
+  flashMsg("Booking created. Booking No: " + result.bookNo + " - Seats: " + result.seats.join(", ") +
+    " - Total: Rs. " + calcFare(transport, result.seats.length) + ".");
+  showTicket(result.bookNo);
+}
+
+function renderBookings() {
+  if (!requireLogin()) return;
+  var cards = visibleBookings().map(function (b) {
+    var t = transportById(b.tid);
+    return '<div class="card"><h3>Booking ' + b.bookNo + " - " + esc(t ? t.name : "-") + "</h3>" +
+      "<p>" + esc(b.bookDate) + " | " + esc(b.custName) + " | Seats: " + b.seats.join(", ") + "</p>" +
+      '<p><button onclick="showTicket(' + b.bookNo + ')">View Ticket</button> ' +
+      '<button class="secondary" onclick="confirmCancel(' + b.bookNo + ')">Cancel</button></p></div>';
+  }).join("");
+  document.getElementById("view-bookings").innerHTML =
+    "<h2>Bookings" + (isAdmin() ? " (all customers)" : " (your bookings)") + "</h2>" +
+    (cards || "<p>No bookings yet.</p>");
+}
+function showTicket(bookNo) {
+  var b = bookings.find(function (x) { return x.bookNo === bookNo; });
+  if (!b) { flashMsg("Booking not found."); showView("bookings"); return; }
+  if (!isAdmin() && b.userEmail !== session.email) {
+    flashMsg("You can only view your own bookings."); showView("bookings"); return;
+  }
+  var t = transportById(b.tid);
+  var p = paymentById(b.pmodeId);
+  var total = t ? calcFare(t, b.seats.length) : 0;
+  document.getElementById("view-ticket").innerHTML =
+    '<div class="card"><h2>Ticket - Booking ' + b.bookNo + "</h2><table>" +
+    "<tr><th>Customer</th><td>" + esc(b.custName) + "</td></tr>" +
+    "<tr><th>Transport</th><td>" + esc(t ? t.name + " (" + t.from + " to " + t.to + ")" : "-") + "</td></tr>" +
+    "<tr><th>Departure / Arrival</th><td>" + esc(t ? t.dep + " / " + t.arr : "-") + "</td></tr>" +
+    "<tr><th>Travel date</th><td>" + esc(b.bookDate) + "</td></tr>" +
+    "<tr><th>Seats</th><td>" + b.seats.join(", ") + "</td></tr>" +
+    "<tr><th>Rate per seat (r_major)</th><td>Rs. " + (t ? t.rMajor : 0) + "</td></tr>" +
+    "<tr><th>Total fare</th><td><b>Rs. " + total + "</b> (" + b.seats.length + " seat(s) x Rs. " + (t ? t.rMajor : 0) + ")</td></tr>" +
+    "<tr><th>Payment mode</th><td>" + esc(p ? p.name : "-") + "</td></tr></table>" +
+    '<p><button class="secondary" onclick="confirmCancel(' + b.bookNo + ')">Cancel Booking</button> ' +
+    '<button class="secondary" onclick="showView(\'bookings\')">All Bookings</button></p></div>';
+  ["view-home", "view-masters", "view-booking", "view-bookings", "view-reports", "view-auth"].forEach(function (id) {
+    document.getElementById(id).style.display = "none";
+  });
+  document.getElementById("view-ticket").style.display = "block";
+}
+function confirmCancel(bookNo) {
+  var b = bookings.find(function (x) { return x.bookNo === bookNo; });
+  if (!b) return;
+  if (!isAdmin() && b.userEmail !== session.email) {
+    flashMsg("You can only cancel your own bookings."); return;
+  }
+  if (window.confirm("Cancel Booking " + bookNo + "? This frees its seats again.")) {
+    cancelBooking(bookNo);
+    flashMsg("Booking " + bookNo + " cancelled. Its seats are free again.");
+    showView("bookings");
+  }
+}
+
+function renderReports() {
+  if (!session) { flashMsg("Please log in first."); showView("auth"); return; }
+  if (!isAdmin()) { flashMsg("Admin only."); showView("home"); return; }
+  var sections = [];
+  sections.push(["1 - Transport Type Master",
+    tableHtml(MASTER_HEADERS.transportTypes, masterRows("transportTypes"))]);
+  sections.push(["2 - Transport Master",
+    tableHtml(["ID", "Name", "Capacity", "Major Rate", "From", "To"],
+      allOf("transports").map(function (x) { return [x.id, x.name, x.capacity, x.rMajor, x.from, x.to]; }))]);
+  sections.push(["3 - Transport Transactions (Bookings)",
+    tableHtml(["Booking No", "Date", "Customer", "Transport", "Seats"],
+      bookings.map(function (b) {
+        var t = transportById(b.tid);
+        return [b.bookNo, b.bookDate, b.custName, t ? t.name : "-", b.seats.length];
+      }))]);
+  sections.push(["4 - Payment Transactions",
+    tableHtml(["Booking No", "Date", "Customer", "Payment Mode"],
+      bookings.map(function (b) {
+        var p = paymentById(b.pmodeId);
+        return [b.bookNo, b.bookDate, b.custName, p ? p.name : "-"];
+      }))]);
+  sections.push(["5 - Customer Transactions",
+    tableHtml(["Code", "Customer", "Booking No", "Date"],
+      allOf("customers").map(function (c) {
+        var bs = bookings.filter(function (b) { return b.custCode === c.code; });
+        if (!bs.length) return [c.code, c.name, "-", "-"];
+        return null;
+      }).filter(Boolean).concat(bookings.map(function (b) {
+        var c = customerByCode(b.custCode);
+        return [b.custCode, c ? c.name : b.custName, b.bookNo, b.bookDate];
+      })))]);
+  sections.push(["6 - Route Transactions",
+    tableHtml(["Route", "From", "To", "Transport", "Booking No"],
+      allOf("routes").map(function (r) {
+        var ts = allOf("transports").filter(function (t) { return t.routeId === r.id; });
+        if (!ts.length) return [r.name, r.from, r.to, "-", "-"];
+        return null;
+      }).filter(Boolean).concat(bookings.map(function (b) {
+        var t = transportById(b.tid);
+        var r = t ? allOf("routes").find(function (x) { return x.id === t.routeId; }) : null;
+        return [r ? r.name : "-", r ? r.from : "-", r ? r.to : "-", t ? t.name : "-", b.bookNo];
+      })))]);
+  document.getElementById("view-reports").innerHTML = "<h2>Reports (Admin)</h2>" +
+    sections.map(function (s) { return '<div class="card"><h3>' + s[0] + "</h3>" + s[1] + "</div>"; }).join("");
+}
+
+var authTab = "login";
+function renderAuth() {
+  var tabs = '<div class="tabs"><button class="' + (authTab === "login" ? "active" : "") +
+    '" onclick="authTab=\'login\';renderAuth()">Login</button>' +
+    '<button class="' + (authTab === "signup" ? "active" : "") +
+    '" onclick="authTab=\'signup\';renderAuth()">Sign Up</button></div>';
+  var title = authTab === "login" ? "Login" : "Sign Up";
+  var nameField = authTab === "signup" ? '<label>Full name<input id="auth_name"></label>' : "";
+  var note = authTab === "login"
+    ? '<p class="muted">Note: logging in with the owner email (rishabhsingh4630@gmail.com) automatically becomes admin — please confirm/change this email if it is not the owner\'s real email. Accounts are stored only in this browser with a demo hash, not production security.</p>'
+    : '<p class="muted">Your account is stored only in this browser. Use any email and password; nothing leaves this device.</p>';
+  var switchLink = authTab === "login"
+    ? '<p class="muted">No account yet? <a onclick="authTab=\'signup\';renderAuth()" style="cursor:pointer">Sign up</a></p>'
+    : '<p class="muted">Already have an account? <a onclick="authTab=\'login\';renderAuth()" style="cursor:pointer">Log in</a></p>';
+  document.getElementById("view-auth").innerHTML =
+    '<div class="card" style="max-width:480px;margin:0 auto"><h2>' + title + "</h2>" + tabs + nameField +
+    '<label>Email<input id="auth_email" type="email"></label>' +
+    '<label>Password<input id="auth_pass" type="password"></label>' +
+    '<p><button onclick="submitAuth()">' + title + "</button></p>" + note + switchLink + "</div>";
+}
+function submitAuth() {
+  var email = document.getElementById("auth_email").value;
+  var pass = document.getElementById("auth_pass").value;
+  if (authTab === "signup") {
+    var err = signUp(document.getElementById("auth_name").value, email, pass);
+    if (err) { flashMsg(err); return; }
+    flashMsg("Account created. Please log in.");
+    authTab = "login";
+    renderAuth();
+  } else {
+    var err2 = logIn(email, pass);
+    if (err2) { flashMsg(err2); return; }
+    flashMsg("Welcome, " + session.name + " (" + session.role + ").");
+    showView("home");
+  }
+}
+
+// ---------- Router ----------
+var VIEWS = ["home", "masters", "booking", "bookings", "ticket", "reports", "auth"];
+function showView(name) {
+  VIEWS.forEach(function (v) {
+    document.getElementById("view-" + v).style.display = (v === name ? "block" : "none");
+  });
+  if (name === "home") renderHome();
+  if (name === "masters") renderMasters();
+  if (name === "booking") renderBooking();
+  if (name === "bookings") renderBookings();
+  if (name === "reports") renderReports();
+  if (name === "auth") renderAuth();
+  updateNav();
+}
+updateNav();
+renderHome();
+</script>
+</body>
+</html>
