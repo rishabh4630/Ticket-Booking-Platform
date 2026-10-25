@@ -1027,31 +1027,169 @@ function submitAuth() {
   }
 }
 
-// ---------- Train Info (demo: honest card, no live data, no fake data) ----------
-// Live train data needs a RapidAPI key, and a key must never live in a static
-// page anyone can read, so these forms are disabled here on purpose. The
-// Flask version's Train Info page is the one that calls the API server-side.
+// ---------- Train Info (demo: live via visitor's own RapidAPI key, BYOK) ----------
+// Endpoints VERIFIED from the official Endpoints documentation (user screenshots,
+// 2026-10-25). The key is NEVER in this file: the visitor types their own free
+// RapidAPI key, it is stored only in their browser's localStorage, and it is sent
+// only as the X-RapidAPI-Key header to indian-railway-api1.p.rapidapi.com.
+var TRAIN_HOST = "indian-railway-api1.p.rapidapi.com";
+var TRAIN_KEY_STORE = "tsn_rapidapi_key";
+function trainKey() { try { return localStorage.getItem(TRAIN_KEY_STORE) || ""; } catch (e) { return ""; } }
+function trainToday() {
+  var d = new Date();
+  var m = "" + (d.getMonth() + 1), day = "" + d.getDate();
+  return d.getFullYear() + "-" + (m.length < 2 ? "0" + m : m) + "-" + (day.length < 2 ? "0" + day : day);
+}
+function trainErrMsg(status) {
+  if (status === 401 || status === 403) return "Key galat ya plan inactive lag rahi hai — key dobara check karo (free BASIC plan subscribed hona chahiye).";
+  if (status === 429) return "Free plan ki limit khatam ho gayi hai — thodi der baad ya agle din dobara try karo.";
+  return "Live data nahi mil paya — thodi der baad dobara try karo.";
+}
+function trainPick(item, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    var v = item[keys[i]];
+    if (v && typeof v === "object") v = v.name || v.code || v.station_name;
+    if (v !== undefined && v !== null && v !== "") return "" + v;
+  }
+  return "";
+}
+function trainRender(data) {
+  var items = null, i, line;
+  if (data instanceof Array) items = data;
+  else if (data && typeof data === "object") {
+    var k, keys = ["trains", "data", "results", "train_list"];
+    for (k = 0; k < keys.length; k++) {
+      if (data[keys[k]] instanceof Array) { items = data[keys[k]]; break; }
+    }
+  }
+  var out = "";
+  if (items) {
+    out += "<ul>";
+    for (i = 0; i < items.length && i < 50; i++) {
+      var it = items[i];
+      if (it && typeof it === "object") {
+        var name = trainPick(it, ["train_name", "name"]);
+        var no = trainPick(it, ["train_number", "number", "train_no"]);
+        var frm = trainPick(it, ["from_station", "from", "source", "from_station_name"]);
+        var to = trainPick(it, ["to_station", "to", "destination", "to_station_name"]);
+        var dep = trainPick(it, ["departure", "departure_time", "dep_time", "from_time"]);
+        var arr = trainPick(it, ["arrival", "arrival_time", "arr_time", "to_time"]);
+        var parts = [];
+        if (name) parts.push(name);
+        if (no) parts.push("Train " + no);
+        if (frm && to) parts.push(frm + " → " + to);
+        if (dep && arr) parts.push(dep + " – " + arr);
+        line = parts.length ? parts.join(" · ") : JSON.stringify(it);
+      } else line = "" + it;
+      out += "<li>" + esc(line) + "</li>";
+    }
+    out += "</ul>";
+  } else if (data && typeof data === "object") {
+    out += "<ul>";
+    for (var key in data) {
+      var val = data[key];
+      if (typeof val === "string" || typeof val === "number" || typeof val === "boolean" || val === null)
+        out += "<li><b>" + esc(key) + "</b>: " + esc(val === null ? "" : "" + val) + "</li>";
+    }
+    out += "</ul>";
+  }
+  out += "<details><summary>Poora jawab (JSON)</summary><pre style=\"white-space:pre-wrap;word-break:break-word\">" +
+    esc(JSON.stringify(data, null, 2)) + "</pre></details>" +
+    '<p class="muted">Live data: RapidAPI Indian Railway API.</p>';
+  return out;
+}
+function trainFetch(path, query, outId) {
+  var key = trainKey();
+  var box = document.getElementById(outId);
+  if (!key) { box.innerHTML = "<p>Key save nahi hai — upar key box me apni free RapidAPI key daalo, phir dobara try karo.</p>"; return; }
+  var url = "https://" + TRAIN_HOST + path + (query ? "?" + query : "");
+  var c = new AbortController();
+  var t = setTimeout(function () { c.abort(); }, 10000);
+  box.innerHTML = "<p>Live data load ho raha hai...</p>";
+  fetch(url, {signal: c.signal, headers: {"X-RapidAPI-Key": key, "X-RapidAPI-Host": TRAIN_HOST}})
+    .then(function (resp) { if (!resp.ok) throw {status: resp.status}; return resp.json(); })
+    .then(function (data) { box.innerHTML = trainRender(data); })
+    .catch(function (err) {
+      var msg = (err && err.status) ? trainErrMsg(err.status)
+        : (err && err.name === "AbortError") ? "Request timeout ho gaya — dobara try karo."
+        : "Live data nahi mil paya — internet connection check karke dobara try karo.";
+      box.innerHTML = "<p>" + esc(msg) + "</p>";
+    })
+    .finally(function () { clearTimeout(t); });
+}
+function trainSaveKey() {
+  var v = (document.getElementById("ti-key").value || "").trim();
+  if (!v) { document.getElementById("ti-keystate").textContent = "Pehle key daalo."; return; }
+  try { localStorage.setItem(TRAIN_KEY_STORE, v); } catch (e) {}
+  renderTrainInfo();
+}
+function trainClearKey() {
+  try { localStorage.removeItem(TRAIN_KEY_STORE); } catch (e) {}
+  renderTrainInfo();
+}
+function trainBetween() {
+  var frm = (document.getElementById("ti-from").value || "").trim().toUpperCase();
+  var to = (document.getElementById("ti-to").value || "").trim().toUpperCase();
+  var box = document.getElementById("ti-out-between");
+  if (!/^[A-Z]{3,5}$/.test(frm) || !/^[A-Z]{3,5}$/.test(to)) {
+    box.innerHTML = "<p>Station code 3-5 letters ka hona chahiye (jaise NDLS, PNBE).</p>"; return;
+  }
+  trainFetch("/api/v1/trains/between", "from=" + encodeURIComponent(frm) + "&to=" + encodeURIComponent(to), "ti-out-between");
+}
+function trainStatus() {
+  var no = (document.getElementById("ti-trainno").value || "").trim();
+  var dt = (document.getElementById("ti-date").value || "").trim();
+  var box = document.getElementById("ti-out-status");
+  if (!/^\d{4,5}$/.test(no)) { box.innerHTML = "<p>Train number 4-5 digits ka hona chahiye.</p>"; return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) { box.innerHTML = "<p>Start date chahiye (YYYY-MM-DD).</p>"; return; }
+  trainFetch("/api/v1/trains/" + no + "/status", "start_date=" + encodeURIComponent(dt), "ti-out-status");
+}
+function trainPnr() {
+  var pnr = (document.getElementById("ti-pnr").value || "").trim();
+  var box = document.getElementById("ti-out-pnr");
+  if (!/^\d{10}$/.test(pnr)) { box.innerHTML = "<p>PNR exactly 10 digits ka hona chahiye.</p>"; return; }
+  trainFetch("/api/v1/pnr/" + pnr, "", "ti-out-pnr");
+}
+function trainSearch() {
+  var q = (document.getElementById("ti-query").value || "").trim();
+  var box = document.getElementById("ti-out-search");
+  if (!q || q.length > 64) { box.innerHTML = "<p>Train ka naam ya number daalo (1-64 characters).</p>"; return; }
+  trainFetch("/api/v1/trains/search", "query=" + encodeURIComponent(q), "ti-out-search");
+}
 function renderTrainInfo() {
-  var disabledForm = function (title, fields) {
-    return '<div class="card" style="opacity:.65"><h3>' + title + " (demo me band)</h3>" +
-      fields.map(function (f) {
-        return "<label>" + f + '<input disabled placeholder="Flask version me chalta hai"></label>';
-      }).join("") + '<p><button disabled>Search</button></p></div>';
-  };
+  var hasKey = !!trainKey();
+  var dis = hasKey ? "" : " disabled";
+  var note = hasKey
+    ? '<p class="muted">Key save hai (sirf is browser me). Hatane ke liye Clear dabao.</p>'
+    : '<p>Forms chalane ke liye pehle apni free RapidAPI key upar save karo — bina key ke koi live call nahi bheji jaati.</p>';
   document.getElementById("view-traininfo").innerHTML =
     '<div class="card"><h2>Train Info — Live Train Data</h2>' +
-    "<p>Live train data (do stations ke beech trains, live running status, PNR status) ke liye " +
-    "<b>Flask version + free RapidAPI key</b> chahiye. Static demo me API key rakhna safe nahi hai, " +
-    "isliye ye forms yahan band hain — <b>koi nakli train data nahi dikhaya ja raha</b>.</p>" +
-    "<h3>Setup (Flask version ke liye)</h3><ol>" +
-    "<li>RapidAPI par free account banao.</li>" +
-    '<li><a href="https://rapidapi.com/software-on-service-software-on-service-default/api/indian-railway-api1" target="_blank" rel="noreferrer">Indian Railway API</a> listing kholo aur free BASIC plan subscribe karo.</li>' +
-    "<li>Apni key copy karo aur server start karne se pehle <code>RAPIDAPI_KEY</code> environment variable me daalo — key kabhi code ya demo me mat daalo.</li>" +
-    "<li>Phir Flask version me Train Info page kholo.</li></ol>" +
-    '<p class="muted">Note: train ki live jaankari aur ticket booking alag cheezein hain — booking ke liye New Booking use karo.</p></div>' +
-    disabledForm("Do stations ke beech trains", ["From station code", "To station code"]) +
-    disabledForm("Live running status", ["Train number"]) +
-    disabledForm("PNR status", ["10-digit PNR"]);
+    "<p>Live train data <b>RapidAPI Indian Railway API</b> (free plan) se aata hai. " +
+    "Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye New Booking use karo.</p>" +
+    '<p class="muted">Note: train ki live jaankari aur TSN demo bookings alag cheezein hain.</p></div>' +
+    '<div class="card"><h3>Apni RapidAPI key</h3>' +
+    "<p>Key sirf is browser me save hoti hai, code/GitHub me kabhi nahi jaati. " +
+    "RapidAPI par free account + Indian Railway API ka free BASIC plan chahiye; key code snippet se milegi — " +
+    "key yahan daalo, kisi chat ya code me mat bhejo.</p>" +
+    '<label>RapidAPI key<input type="password" id="ti-key" placeholder="Apni free RapidAPI key yahan daalo"></label>' +
+    '<p><button onclick="trainSaveKey()">Save key</button> <button onclick="trainClearKey()">Clear</button> ' +
+    '<span id="ti-keystate"></span></p>' + note + "</div>" +
+    '<div class="card"><h3>Do stations ke beech trains</h3>' +
+    '<label>From station code<input id="ti-from" placeholder="e.g. NDLS (Delhi)"' + dis + "></label>" +
+    '<label>To station code<input id="ti-to" placeholder="e.g. PNBE (Patna)"' + dis + "></label>" +
+    '<p class="muted">Station code ticket par likha hota hai (3-5 letters).</p>' +
+    '<p><button onclick="trainBetween()"' + dis + ">Search Trains</button></p><div id=\"ti-out-between\"></div></div>" +
+    '<div class="card"><h3>Live running status</h3>' +
+    '<label>Train number<input id="ti-trainno" placeholder="e.g. 12301"' + dis + "></label>" +
+    '<label>Start date<input id="ti-date" type="date" value="' + trainToday() + '"' + dis + "></label>" +
+    '<p><button onclick="trainStatus()"' + dis + ">Check Live Status</button></p><div id=\"ti-out-status\"></div></div>" +
+    '<div class="card"><h3>PNR status</h3>' +
+    '<label>10-digit PNR<input id="ti-pnr" maxlength="10" placeholder="e.g. 6410603220"' + dis + "></label>" +
+    '<p><button onclick="trainPnr()"' + dis + ">Check PNR Status</button></p><div id=\"ti-out-pnr\"></div></div>" +
+    '<div class="card"><h3>Train dhoondo (naam/number se)</h3>' +
+    '<label>Train naam ya number<input id="ti-query" placeholder="e.g. 12301"' + dis + "></label>" +
+    '<p><button onclick="trainSearch()"' + dis + ">Search Train</button></p><div id=\"ti-out-search\"></div></div>";
+  document.getElementById("ti-keystate").textContent = hasKey ? "Key save hai." : "Key save nahi hai.";
 }
 
 // ---------- Router ----------
