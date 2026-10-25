@@ -239,7 +239,7 @@ def rapidapi_get(path, params):
 
 
 def train_setup_card():
-    return """<div class="hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
+    return """<div class="ti-photo-hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
     <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
     <div class="card"><h2>Setup chahiye</h2>
     <p>Live train data (do stations ke beech trains, live running status, PNR status)
@@ -722,6 +722,10 @@ body{background:transparent}
 @media (prefers-color-scheme:dark){.video-bg{opacity:.45}.video-overlay{background:linear-gradient(120deg,rgba(2,15,30,.72) 0%,rgba(4,31,61,.55) 45%,rgba(6,59,120,.30) 100%)}}
 @media (prefers-reduced-motion:reduce){.video-bg,.video-overlay{display:none}}
 main>h2{text-shadow:0 1px 10px rgba(0,0,0,.30)}
+.ti-photo-hero{border-radius:20px;padding:30px 28px;margin-bottom:22px;color:#fff;box-shadow:0 12px 30px rgba(4,41,79,.25);background:linear-gradient(100deg,rgba(2,20,40,.82) 0%,rgba(4,41,79,.55) 55%,rgba(4,41,79,.15) 100%),url("https://images.pexels.com/photos/34760274/pexels-photo-34760274/free-photo-of-scenic-train-journey-through-swiss-canyon-in-fall.jpeg?auto=compress&cs=tinysrgb&w=1600") center/cover}
+.ti-photo-hero h1{color:#fff;margin:0 0 8px}
+.ti-photo-hero p{color:#dbeeff;margin:0}
+.ti-photo-hero .eyebrow{color:#bfe3ff;margin-bottom:10px}
 </style></head><body>
 <video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
@@ -1559,7 +1563,7 @@ def train_info():
         body = train_setup_card()
     else:
         today = date.today().isoformat()
-        body = f"""<div class="hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
+        body = f"""<div class="ti-photo-hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
         <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
         <div class="card">
         <p class="muted">Live data RapidAPI "Indian Railway API" (free plan) se aata hai.
