@@ -197,38 +197,45 @@ def route_info(from_city, to_city):
 
 # ---------------------------------------------------------------------------
 # Train live data (Flask only, via RapidAPI "Indian Railway API")
-# The listing page confirms the feature areas (trains between stations, live
-# running status, PNR status) and a free BASIC plan, but its Endpoints tab
-# does not expose exact paths without login, so NO endpoint path is
-# hard-coded here -- paths come from env vars once confirmed on the listing.
-# Never invent endpoint URLs. The key is read only from the environment and
-# is never sent to the browser or the static demo.
+# Endpoint paths VERIFIED from the official Endpoints documentation
+# (screenshots sent by the user, 2026-10-25). Base host is the RapidAPI
+# standard pattern from the listing slug. The key is read only from the
+# environment and is never sent to the browser or the static demo.
 # ---------------------------------------------------------------------------
 RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "indian-railway-api1.p.rapidapi.com")
-TRAIN_API_ENDPOINTS = {
-    "between": os.environ.get("RAPIDAPI_TRAINS_BETWEEN", ""),
-    "live": os.environ.get("RAPIDAPI_LIVE_STATUS", ""),
-    "pnr": os.environ.get("RAPIDAPI_PNR_STATUS", ""),
+TRAIN_API = {
+    "between": "/api/v1/trains/between",            # ?from=NDLS&to=PNBE
+    "status": "/api/v1/trains/{train_no}/status",   # ?start_date=YYYY-MM-DD
+    "pnr": "/api/v1/pnr/{pnr}",                     # exact 10-digit PNR
+    "search": "/api/v1/trains/search",              # ?query=train name/number
+    "schedule": "/api/v1/trains/{train_no}/schedule",
+    "live_board": "/api/v1/stations/{station_code}/live",
 }
 
 
 def rapidapi_get(path, params):
     """Call RapidAPI server-side. Returns (data, error); error is one of
-    'no-key', 'no-endpoint', or a short failure message. Never raises."""
+    'no-key', 'auth', 'rate', or a short failure message. Never raises."""
     key = os.environ.get("RAPIDAPI_KEY", "")
     if not key:
         return None, "no-key"
-    if not path:
-        return None, "no-endpoint"
-    url = "https://" + RAPIDAPI_HOST + path + "?" + urllib.parse.urlencode(params)
+    url = "https://" + RAPIDAPI_HOST + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(
         url, headers={"X-RapidAPI-Key": key, "X-RapidAPI-Host": RAPIDAPI_HOST}
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode("utf-8", "replace")), None
-    except Exception as exc:
-        return None, str(exc)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            return None, "auth"
+        if exc.code == 429:
+            return None, "rate"
+        return None, "HTTP %s" % exc.code
+    except Exception:
+        return None, "network"
 
 
 def train_setup_card():
@@ -245,22 +252,6 @@ def train_setup_card():
     </ol>
     <p class="muted">Key kabhi code me, GitHub par ya static demo me mat daalo — sirf server
     ke environment me rakho. RapidAPI key ke bina koi live train call nahi bheji jaati.</p></div>"""
-
-
-def train_endpoint_card():
-    return """<div class="card"><h2>Train Info — endpoint configure karna baaki hai</h2>
-    <p>RapidAPI key mil gayi hai, lekin is API ke <b>exact endpoint paths</b> listing se
-    confirm nahi ho paye (RapidAPI page ka Endpoints tab bina login ke paths nahi dikhata),
-    isliye koi live call nahi bheji gayi — galat/andaze wale URL par call karna sahi nahi hoga.</p>
-    <p>Listing ke Endpoints tab se path dekhkar server start karne se pehle ye environment
-    variables daalo, phir server restart karo:</p>
-    <ul>
-    <li><code>RAPIDAPI_TRAINS_BETWEEN</code> — do stations ke beech trains wala path</li>
-    <li><code>RAPIDAPI_LIVE_STATUS</code> — live running status wala path</li>
-    <li><code>RAPIDAPI_PNR_STATUS</code> — PNR status wala path</li>
-    </ul>
-    <p class="muted">Feature areas listing se confirmed hain: trains between stations,
-    live running status aur 10-digit PNR status. Paths confirm hote hi ye forms live ho jayenge.</p></div>"""
 
 
 # ---------------------------------------------------------------------------
@@ -1519,73 +1510,151 @@ def train_info():
         elif kind == "pnr":
             pnr = request.form.get("pnr", "").strip()
             if not re.match(r"^\d{10}$", pnr):
-                result = '<div class="card"><p>PNR 10 digits ka hona chahiye.</p></div>'
+                result = '<div class="card"><p>PNR exactly 10 digits ka hona chahiye.</p></div>'
             else:
-                data, err = rapidapi_get(TRAIN_API_ENDPOINTS["pnr"], {"pnr": pnr})
+                data, err = rapidapi_get(TRAIN_API["pnr"].format(pnr=pnr), {})
                 result = train_result_html("PNR status", data, err)
         elif kind == "between":
             frm = request.form.get("from_station", "").strip().upper()
             to = request.form.get("to_station", "").strip().upper()
-            travel_date = request.form.get("travel_date", "").strip()
-            if not frm or not to:
-                result = '<div class="card"><p>From aur To station code dono chahiye.</p></div>'
+            if not re.match(r"^[A-Z]{3,5}$", frm) or not re.match(r"^[A-Z]{3,5}$", to):
+                result = '<div class="card"><p>Station code 3-5 letters ka hona chahiye (jaise NDLS, PNBE).</p></div>'
             else:
-                params = {"from": frm, "to": to}
-                if travel_date:
-                    params["date"] = travel_date
-                data, err = rapidapi_get(TRAIN_API_ENDPOINTS["between"], params)
+                data, err = rapidapi_get(TRAIN_API["between"], {"from": frm, "to": to})
                 result = train_result_html("Do stations ke beech trains", data, err)
         elif kind == "live":
             train_no = request.form.get("train_no", "").strip()
-            travel_date = request.form.get("travel_date", "").strip()
-            if not train_no.isdigit():
-                result = '<div class="card"><p>Train number sirf digits me daalo.</p></div>'
+            start_date = request.form.get("start_date", "").strip()
+            if not re.match(r"^\d{4,5}$", train_no):
+                result = '<div class="card"><p>Train number 4-5 digits ka hona chahiye.</p></div>'
+            elif not re.match(r"^\d{4}-\d{2}-\d{2}$", start_date):
+                result = '<div class="card"><p>Start date chahiye (YYYY-MM-DD).</p></div>'
             else:
-                params = {"train": train_no}
-                if travel_date:
-                    params["date"] = travel_date
-                data, err = rapidapi_get(TRAIN_API_ENDPOINTS["live"], params)
+                path = TRAIN_API["status"].format(train_no=train_no)
+                data, err = rapidapi_get(path, {"start_date": start_date})
                 result = train_result_html("Live running status", data, err)
+        elif kind == "search":
+            query = request.form.get("query", "").strip()
+            if not query or len(query) > 64:
+                result = '<div class="card"><p>Train ka naam ya number daalo (1-64 characters).</p></div>'
+            else:
+                data, err = rapidapi_get(TRAIN_API["search"], {"query": query})
+                result = train_result_html("Train search", data, err)
         else:
             result = '<div class="card"><p>Unknown form.</p></div>'
     if not key_set:
         body = train_setup_card()
     else:
-        body = """<div class="card"><h2>Train Info — Live Train Data</h2>
+        today = date.today().isoformat()
+        body = f"""<div class="card"><h2>Train Info — Live Train Data</h2>
         <p class="muted">Live data RapidAPI "Indian Railway API" (free plan) se aata hai.
         Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye
         <a href="/booking/new">New Booking</a> use karo.</p></div>
         <div class="card"><h3>Do stations ke beech trains</h3><form method="post">
         <input type="hidden" name="form_kind" value="between">
-        <label>From station code<input name="from_station" placeholder="e.g. LKO" required></label>
-        <label>To station code<input name="to_station" placeholder="e.g. NDLS" required></label>
-        <label>Date (optional)<input name="travel_date" type="date"></label>
+        <label>From station code<input name="from_station" placeholder="e.g. NDLS (Delhi)" required></label>
+        <label>To station code<input name="to_station" placeholder="e.g. PNBE (Patna)" required></label>
+        <p class="muted">Station code ticket par likha hota hai (3-5 letters).</p>
         <p><button>Search Trains</button></p></form></div>
         <div class="card"><h3>Live running status</h3><form method="post">
         <input type="hidden" name="form_kind" value="live">
-        <label>Train number<input name="train_no" placeholder="e.g. 12429" required></label>
-        <label>Date (optional)<input name="travel_date" type="date"></label>
+        <label>Train number<input name="train_no" placeholder="e.g. 12301" required></label>
+        <label>Start date<input name="start_date" type="date" value="{today}" required></label>
         <p><button>Check Live Status</button></p></form></div>
         <div class="card"><h3>PNR status</h3><form method="post">
         <input type="hidden" name="form_kind" value="pnr">
-        <label>10-digit PNR<input name="pnr" maxlength="10" placeholder="e.g. 1234567890" required></label>
-        <p><button>Check PNR Status</button></p></form></div>"""
+        <label>10-digit PNR<input name="pnr" maxlength="10" placeholder="e.g. 6410603220" required></label>
+        <p><button>Check PNR Status</button></p></form></div>
+        <div class="card"><h3>Train dhoondo (naam/number se)</h3><form method="post">
+        <input type="hidden" name="form_kind" value="search">
+        <label>Train naam ya number<input name="query" placeholder="e.g. 12301" required></label>
+        <p><button>Search Train</button></p></form></div>"""
         if result:
             body = result + body
     return page("Train Info", body)
 
 
+def _train_pick(item, *keys):
+    """First present value among keys; station dicts collapse to name/code."""
+    for key in keys:
+        val = item.get(key)
+        if isinstance(val, dict):
+            val = val.get("name") or val.get("code") or val.get("station_name")
+        if val not in (None, ""):
+            return str(val)
+    return ""
+
+
+def _train_list_items(data):
+    """A list of trains if the response carries one under a likely key."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("trains", "data", "results", "train_list"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return []
+
+
+def _train_item_line(item):
+    if not isinstance(item, dict):
+        return str(item)
+    name = _train_pick(item, "train_name", "name")
+    no = _train_pick(item, "train_number", "number", "train_no")
+    frm = _train_pick(item, "from_station", "from", "source", "from_station_name")
+    to = _train_pick(item, "to_station", "to", "destination", "to_station_name")
+    dep = _train_pick(item, "departure", "departure_time", "dep_time", "from_time")
+    arr = _train_pick(item, "arrival", "arrival_time", "arr_time", "to_time")
+    parts = [p for p in [name, ("Train " + no) if no else "",
+                         (frm + " \u2192 " + to) if frm and to else "",
+                         (dep + " - " + arr) if dep and arr else ""] if p]
+    return " \u00b7 ".join(parts) if parts else None
+
+
 def train_result_html(title, data, err):
-    if err == "no-endpoint":
-        return train_endpoint_card()
-    if err:
+    """Render a Train Info result. Response shapes are not documented, so
+    this renders likely fields when present and always falls back to the
+    full JSON — it never crashes on an unexpected shape."""
+    if err == "no-key":
+        return train_setup_card()
+    if err == "auth":
+        msg = ("Key galat ya plan inactive lag rahi hai — RAPIDAPI_KEY dobara "
+               "check karo (free BASIC plan subscribed hona chahiye).")
+    elif err == "rate":
+        msg = ("Free plan ki limit khatam ho gayi hai — thodi der baad ya "
+               "agle din dobara try karo.")
+    elif err:
+        msg = ("Live data nahi mil paya (%s) — thodi der baad dobara "
+               "try karo." % html.escape(err))
+    else:
+        msg = None
+    if msg:
         return (f'<div class="card"><h3>{html.escape(title)}</h3>'
-                f'<p class="muted">Live data nahi mila: {html.escape(err)}. '
-                "Thodi der baad dobara try karo.</p></div>")
+                f"<p>{msg}</p></div>")
+    items = _train_list_items(data)
+    rows = []
+    if isinstance(data, dict):
+        for key, val in data.items():
+            if isinstance(val, (str, int, float, bool)) or val is None:
+                rows.append((str(key), "" if val is None else str(val)))
+    out = [f'<div class="card"><h3>{html.escape(title)}</h3>']
+    if items:
+        out.append("<ul>")
+        for item in items[:50]:
+            line = _train_item_line(item)
+            text = line if line else json.dumps(item, ensure_ascii=False)
+            out.append("<li>" + html.escape(text) + "</li>")
+        out.append("</ul>")
+    elif rows:
+        out.append("<ul>")
+        for key, val in rows:
+            out.append(f"<li><b>{html.escape(key)}</b>: {html.escape(val)}</li>")
+        out.append("</ul>")
     pretty = html.escape(json.dumps(data, indent=2, ensure_ascii=False))
-    return (f'<div class="card"><h3>{html.escape(title)}</h3>'
-            f'<pre style="white-space:pre-wrap;word-break:break-word">{pretty}</pre>'
-            '<p class="muted">Live data: RapidAPI Indian Railway API.</p></div>')
+    out.append(f'<details><summary>Poora jawab (JSON)</summary>'
+               f'<pre style="white-space:pre-wrap;word-break:break-word">{pretty}</pre></details>')
+    out.append('<p class="muted">Live data: RapidAPI Indian Railway API.</p></div>')
+    return "".join(out)
 
 
 if __name__ == "__main__":
