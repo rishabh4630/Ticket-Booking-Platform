@@ -89,3 +89,27 @@ cross_platform_web/
 ```
 
 No Oracle password or real credential is stored anywhere in this code.
+
+## Email verification (OTP) — Flask only
+
+Signup can verify that the mailbox really exists: after the format and
+Disify checks pass, the app emails a 6-digit code (valid 10 minutes, max 5
+wrong attempts, resend after a 60-second cooldown) and the account is only
+created once the code is entered on the `/verify` page. The static demo on
+GitHub Pages cannot send email, so this works in the Flask version only.
+
+Setup (environment variables, never in code):
+
+```bash
+export SMTP_HOST="smtp.gmail.com"   # default
+export SMTP_PORT="587"              # default
+export SMTP_USER="you@gmail.com"    # your Gmail address (the sender)
+export SMTP_PASS="xxxx xxxx xxxx xxxx"  # a Gmail App Password, NOT your login password
+# optional: export SMTP_FROM="you@gmail.com"
+python3 app.py
+```
+
+Gmail App Password: Google Account → Security → 2-Step Verification ON →
+App passwords → generate one for "Mail" and use it as `SMTP_PASS`. Never
+paste it in chat or commit it. Without `SMTP_USER`/`SMTP_PASS`, signup
+falls back to creating the account immediately (no OTP step).
