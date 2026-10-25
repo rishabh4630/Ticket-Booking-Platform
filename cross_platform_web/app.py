@@ -23,6 +23,7 @@ proper signup/login with hashed passwords (see below).
 """
 
 import os
+import re
 import sqlite3
 from datetime import date
 from functools import wraps
@@ -279,7 +280,7 @@ header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:10}
 .brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}
 main{max-width:1100px;margin:0 auto;padding:22px 20px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
-.hero{background:linear-gradient(120deg,var(--navy),var(--blue));color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
+.hero{background:linear-gradient(120deg,var(--navy),var(--blue) 55%,#5db2f0);color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
 .hero h1{margin:0 0 6px}
 .hero p{margin:0;color:#dbeeff}
 table{width:100%;border-collapse:collapse}
@@ -294,19 +295,32 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
 .stat b{font-size:1.8rem;color:var(--navy)}
 @media (max-width:600px){main{padding-left:14px;padding-right:14px}}
+.search-card{background:#fff;border-radius:16px;padding:18px;box-shadow:var(--shadow);margin-top:20px;color:var(--ink)}
+.search-card label{margin:0}
+.search-grid{display:grid;grid-template-columns:1.2fr 1.2fr 1fr 1fr auto;gap:12px;align-items:end}
+.search-card .btn{height:44px;white-space:nowrap}
+.trust{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:18px}
+.trust .card{margin-bottom:0}
+.route-card h3{margin:0 0 4px}
+.route-card .fare{font-size:1.4rem;font-weight:700;color:var(--navy);margin:8px 0}
+.footer{border-top:1px solid var(--line);background:#fff;border-radius:16px;margin-top:8px}
+.footer-inner{padding:24px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+.footer h4{margin:0 0 8px;color:var(--navy)}
+.footer a{color:var(--blue);text-decoration:none}
+@media (max-width:700px){.search-grid{grid-template-columns:1fr 1fr}}
 </style></head><body>
 <header><div class="topbar">
 <a class="brand" href="{{ url_for('home') }}">TSN Ticket Booking<span>Transport Service Network - Web Version</span></a>
 <a href="{{ url_for('home') }}">Home</a>
 <a href="{{ url_for('masters_index') }}">Masters</a>
-<a href="{{ url_for('new_booking') }}">New Booking</a>
+<a class="cta" href="{{ url_for('new_booking') }}">New Booking</a>
 <a href="{{ url_for('bookings') }}">Bookings</a>
 <a href="{{ url_for('reports') }}">Reports</a>
 {% if session.get('user_id') %}
 <a href="{{ url_for('logout') }}">Logout ({{ session.get('user_name','') }})</a>
 {% else %}
 <a href="{{ url_for('login') }}">Login</a>
-<a href="{{ url_for('register') }}">Sign Up</a>
+<a href="{{ url_for('register') }}">Register</a>
 {% endif %}
 </div></header>
 <main>
@@ -414,6 +428,44 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
+# Shared footer (shown on the home and search pages only, so other pages
+# keep their existing layout exactly)
+# ---------------------------------------------------------------------------
+FOOTER = """<div class="footer"><div class="footer-inner">
+<div><h4>Help</h4><p><a href="/masters">Masters</a> &middot; <a href="/booking/new">New Booking</a> &middot; <a href="/reports">Reports</a></p>
+<p class="muted">Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</p></div>
+<div><h4>About</h4><p class="muted">TSN Ticket Booking &mdash; a transport ticket booking
+system, here as a cross-platform web app with a saved SQLite database.</p></div>
+<div><h4>Contact</h4><p><a href="https://github.com/rishabh4630/Ticket-Booking-Platform">GitHub repository</a></p></div>
+</div></div>"""
+
+
+def search_card(cities, types, selected=None):
+    selected = selected or {}
+    from_opts = '<option value="">Anywhere</option>' + "".join(
+        f'<option value="{c["city_name"]}"{" selected" if selected.get("from") == c["city_name"] else ""}>{c["city_name"]}</option>'
+        for c in cities
+    )
+    to_opts = '<option value="">Anywhere</option>' + "".join(
+        f'<option value="{c["city_name"]}"{" selected" if selected.get("to") == c["city_name"] else ""}>{c["city_name"]}</option>'
+        for c in cities
+    )
+    type_opts = '<option value="">Any type</option>' + "".join(
+        f'<option value="{t["ttid"]}"{" selected" if str(selected.get("type", "")) == str(t["ttid"]) else ""}>{t["ttname"]}</option>'
+        for t in types
+    )
+    date_val = selected.get("date", "")
+    return f"""<div class="search-card"><form method="get" action="/search">
+    <div class="search-grid">
+    <label>From<select name="from">{from_opts}</select></label>
+    <label>To<select name="to">{to_opts}</select></label>
+    <label>Date<input name="date" type="date" value="{date_val}"></label>
+    <label>Transport Type<select name="type">{type_opts}</select></label>
+    <p style="margin:0"><button class="btn">Search</button></p>
+    </div></form></div>"""
+
+
+# ---------------------------------------------------------------------------
 # Home / Dashboard
 # ---------------------------------------------------------------------------
 @app.route("/")
@@ -430,25 +482,109 @@ def home():
            FROM bookings b JOIN transports t ON t.tid = b.tid
            ORDER BY b.book_no DESC LIMIT 5"""
     ).fetchall()
+    cities = db.execute("SELECT * FROM cities ORDER BY city_name").fetchall()
+    types = db.execute("SELECT * FROM transport_types ORDER BY ttid").fetchall()
+    routes = db.execute("SELECT * FROM routes ORDER BY rid").fetchall()
+    all_transports = db.execute("SELECT * FROM transports").fetchall()
+    route_cards = ""
+    for r in routes:
+        on_route = [t for t in all_transports if t["rid"] == r["rid"]]
+        if not on_route:
+            continue
+        cheapest = min(on_route, key=lambda t: t["r_major"])
+        via = db.execute(
+            "SELECT via FROM route_det WHERE rid=? ORDER BY id", (r["rid"],)
+        ).fetchall()
+        via_text = ", ".join(v["via"] for v in via)
+        route_cards += f"""<div class="card route-card"><h3>{r["st_pos"]} &rarr; {r["dest"]}</h3>
+        <p class="muted">{r["r_name"]}{" &middot; Via: " + via_text if via_text else ""}</p>
+        <p class="fare">From Rs. {cheapest["r_major"]} per seat</p>
+        <p><a class="btn" href="/booking/new?tid={cheapest["tid"]}">Book</a>
+        <a class="btn secondary" href="/search?from={r["st_pos"]}&to={r["dest"]}">View Transports</a></p></div>"""
     stats = "".join(
         f'<div class="card stat"><div class="muted">{k}</div><b>{v}</b></div>'
         for k, v in counts.items()
     )
-    body = f"""<div class="hero"><h1>Book a ticket in under a minute.</h1>
-    <p>Transports, routes, customers and bookings - the TSN Ticket Booking
-    system as a web app. No Oracle or Windows needed.</p></div>
+    body = f"""<div class="hero"><h1>Your journey begins here.</h1>
+    <p>Book bus and train tickets across the network &mdash; transparent fares,
+    seats of your choice, and instant cancellation.</p>
+    {search_card(cities, types)}</div>
+    <div class="trust">
+    <div class="card"><h3>&#10003; Transparent fares</h3><p class="muted">What you see is what you pay: total = seats &times; the transport's major (r_major) rate. No hidden charges.</p></div>
+    <div class="card"><h3>&#10003; Seat of your choice</h3><p class="muted">Pick your own seat numbers. A seat already booked for the same transport and date can never be sold twice.</p></div>
+    <div class="card"><h3>&#10003; Instant cancellation</h3><p class="muted">Cancel any booking and its seats are freed immediately for other travellers.</p></div>
+    </div>
     <div class="grid">{stats}</div>
     <div class="card"><h2>Recent bookings</h2>
     {table_html(recent, [('book_no', 'Booking No'), ('book_date', 'Date'),
                           ('cust_name', 'Customer'), ('tname', 'Transport')])}
     <p><a class="btn" href="/booking/new">New Booking</a>
     <a class="btn secondary" href="/masters">Manage Masters</a></p></div>
-    <div class="card"><h2>About this version</h2>
+    <h2>Popular Routes</h2>
+    <div class="grid">{route_cards or "<p>No routes yet.</p>"}</div>
+    <div class="card"><h2>Why TSN</h2>
+    <ul>
+    <li><b>Complete masters</b> &mdash; transport types, transports, routes with via stops, payment modes and customers, all in one place.</li>
+    <li><b>Reports for all six areas</b> &mdash; the original R1&ndash;R6 reports as plain tables (admin only).</li>
+    <li><b>Login-protected booking</b> &mdash; you see and cancel only your own bookings; admins see everything.</li>
+    </ul>
     <p class="muted">The original project is VB.NET WinForms + Oracle. This web
     version keeps the same masters, transactions and reports on SQLite.
-    Seed data is demo data. Fare rule: ticket total = seats x the transport's
-    major (r_major) rate.</p></div>"""
+    Seed data is demo data.</p></div>
+    {FOOTER}"""
     return page("Home", body)
+
+
+@app.route("/search")
+def search():
+    db = get_db()
+    from_city = request.args.get("from", "").strip()
+    to_city = request.args.get("to", "").strip()
+    travel_date = request.args.get("date", "").strip()
+    type_id = request.args.get("type", "").strip()
+    cities = db.execute("SELECT * FROM cities ORDER BY city_name").fetchall()
+    types = db.execute("SELECT * FROM transport_types ORDER BY ttid").fetchall()
+    sql = """SELECT t.*, tt.ttname FROM transports t
+             LEFT JOIN transport_types tt ON tt.ttid = t.ttid WHERE 1=1"""
+    params = []
+    if from_city:
+        sql += " AND t.st_pos = ?"
+        params.append(from_city)
+    if to_city:
+        sql += " AND t.dest = ?"
+        params.append(to_city)
+    if type_id:
+        sql += " AND t.ttid = ?"
+        params.append(type_id)
+    sql += " ORDER BY t.r_major"
+    rows = db.execute(sql, params).fetchall()
+    cards = ""
+    for t in rows:
+        if travel_date:
+            taken = len(booked_seats(db, t["tid"], travel_date))
+            seats_left = t["capacity"] - taken
+            seats_text = f"{seats_left} seat(s) left on {travel_date}"
+        else:
+            seats_text = f"Capacity {t['capacity']} seats"
+        book_url = f"/booking/new?tid={t['tid']}"
+        if travel_date:
+            book_url += f"&date={travel_date}"
+        cards += f"""<div class="card"><h3>{t["tname"]}</h3>
+        <p>{t["st_pos"]} &rarr; {t["dest"]} &middot; {t["st_time"]} &ndash; {t["reach_time"]} &middot; {t["ttname"] or "Transport"}</p>
+        <p><b>Rs. {t["r_major"]} per seat</b> &middot; {seats_text}</p>
+        <p><a class="btn" href="{book_url}">Book</a></p></div>"""
+    if not cards:
+        cards = """<div class="card"><h3>No transport on this route.</h3>
+        <p class="muted">No transport matches this search. Try different cities,
+        any transport type, or browse the <a href="/masters/transports">Transports</a> list.</p></div>"""
+    selected = {"from": from_city, "to": to_city, "date": travel_date, "type": type_id}
+    body = f"""<div class="hero"><h1>Search Transports</h1>
+    <p>Find a transport for your route and book in a few clicks.</p>
+    {search_card(cities, types, selected)}</div>
+    <h2>Results</h2>
+    {cards}
+    {FOOTER}"""
+    return page("Search Transports", body)
 
 
 # ---------------------------------------------------------------------------
@@ -710,8 +846,17 @@ def new_booking():
         flash(f"Booking created. Booking No: {book_no} - Seats: {', '.join(map(str, sorted(seats)))} - Total: Rs. {total}.")
         return redirect(url_for("ticket", book_no=book_no))
 
+    # Preselect from search / popular-route links: ?tid=<id>&date=<YYYY-MM-DD>.
+    # Values are validated here so query strings cannot inject HTML.
+    try:
+        pre_tid = int(request.args.get("tid", ""))
+    except (TypeError, ValueError):
+        pre_tid = None
+    pre_date = request.args.get("date", "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", pre_date or ""):
+        pre_date = ""
     transport_opts = "".join(
-        f'<option value="{t["tid"]}" data-rate="{t["r_major"]}">{t["tname"]} '
+        f'<option value="{t["tid"]}"{" selected" if pre_tid == t["tid"] else ""} data-rate="{t["r_major"]}">{t["tname"]} '
         f'({t["st_pos"]} to {t["dest"]}, {t["st_time"]}) - Rs. {t["r_major"]} per seat, '
         f'capacity {t["capacity"]}</option>'
         for t in transports
@@ -719,7 +864,7 @@ def new_booking():
     body = f"""<div class="card"><h2>New Booking</h2><form method="post" id="bookForm">
     <label>Transport<select name="tid" id="tidSel">{transport_opts}</select></label>
     {select_field("cust_code", "Customer", [(c["cust_code"], c["cust_name"] or f'Customer {c["cust_code"]}') for c in customers])}
-    <label>Travel date<input name="book_date" type="date" required></label>
+    <label>Travel date<input name="book_date" type="date" required value="{pre_date}"></label>
     {select_field("pmode_id", "Payment mode", [(p["pmid"], p["pname"]) for p in payments])}
     <label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input name="seats" required placeholder="1, 2"></label>
     <p class="muted" id="totalLine">Fare rule: total = seats x the transport's major (r_major) rate.</p>
