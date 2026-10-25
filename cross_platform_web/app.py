@@ -565,7 +565,10 @@ def init_db():
          (85, 'TSN Kalinga', 110, 350, 500, 'per seat', 'Kolkata', 'Bhubaneswar', '08:00', '14:30', 3, 41),
          (86, 'TSN Kalinga', 110, 350, 500, 'per seat', 'Bhubaneswar', 'Kolkata', '15:00', '21:30', 3, 41),
          (87, 'TSN Brahmaputra', 120, 650, 950, 'per seat', 'Kolkata', 'Guwahati', '17:30', '11:00', 3, 42),
-         (88, 'TSN Brahmaputra', 120, 650, 950, 'per seat', 'Guwahati', 'Kolkata', '18:30', '12:00', 3, 42)])
+         (88, 'TSN Brahmaputra', 120, 650, 950, 'per seat', 'Guwahati', 'Kolkata', '18:30', '12:00', 3, 42),
+         (89, 'TSN Express', 40, 300, 500, 'per seat', 'Delhi', 'Lucknow', '06:00', '12:00', 1, 1),
+         (90, 'TSN Mail', 120, 600, 950, 'per seat', 'Bengaluru', 'Lucknow', '09:00', '21:00', 3, 3),
+         (91, 'TSN Deluxe', 50, 400, 750, 'per seat', 'Mumbai', 'Delhi', '08:00', '20:00', 1, 2)])
     # route_det has no unique key, so guard via rows with NOT EXISTS
     # to keep re-runs from duplicating them.
     db.executemany(
