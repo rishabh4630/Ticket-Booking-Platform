@@ -715,10 +715,11 @@ button.secondary:hover,.btn.secondary:hover{background:var(--light)}
 html{background:var(--bg)}
 body{background:transparent}
 .video-bg{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;pointer-events:none}
-.video-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(120deg,rgba(4,41,79,.55) 0%,rgba(6,59,120,.35) 45%,rgba(8,120,209,.20) 100%)}
+.video-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(120deg,rgba(4,41,79,.68) 0%,rgba(6,59,120,.48) 45%,rgba(8,120,209,.30) 100%)}
 .card,.search-card,.footer{background:color-mix(in srgb,var(--surface) 94%,transparent)}
 @media (prefers-color-scheme:dark){.video-bg{opacity:.45}.video-overlay{background:linear-gradient(120deg,rgba(2,15,30,.72) 0%,rgba(4,31,61,.55) 45%,rgba(6,59,120,.30) 100%)}}
 @media (prefers-reduced-motion:reduce){.video-bg,.video-overlay{display:none}}
+main>h2{text-shadow:0 1px 10px rgba(0,0,0,.30)}
 </style></head><body>
 <video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
