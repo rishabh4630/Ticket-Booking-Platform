@@ -730,6 +730,9 @@ header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);bo
 .topbar{padding:14px 20px}
 .nav-auth{background:rgba(255,255,255,.10);border-left:0;border-radius:999px;padding:6px 10px 6px 16px}
 @media (prefers-color-scheme:dark){header{background:linear-gradient(100deg,#021a33 0%,#063B78 55%,#0a6cb8 100%);box-shadow:0 8px 24px rgba(0,0,0,.55)}}
+.topbar{row-gap:0}
+.nav-links{order:3;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
+.nav-auth{order:2;margin-left:auto}
 </style></head><body>
 <video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
