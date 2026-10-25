@@ -1165,11 +1165,23 @@ function submitAuth() {
   var email = document.getElementById("auth_email").value;
   var pass = document.getElementById("auth_pass").value;
   if (authTab === "signup") {
-    var err = signUp(document.getElementById("auth_name").value, email, pass);
-    if (err) { flashMsg(err); return; }
-    flashMsg("Account created. Please log in.");
-    authTab = "login";
-    renderAuth();
+    var nm = document.getElementById("auth_name").value;
+    var em = email.trim().toLowerCase();
+    if (!nm.trim() || !em || !pass) { flashMsg("Name, email and password are required."); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { flashMsg("Sahi email daalo, jaise naam@example.com"); return; }
+    if (pass.length < 8 || !/[A-Za-z]/.test(pass) || !/[0-9]/.test(pass)) { flashMsg("Password kam se kam 8 characters ka ho, usme letter aur number dono hon."); return; }
+    flashMsg("Email verify ho rahi hai...");
+    fetchTimeout("https://disify.com/api/email/" + encodeURIComponent(em), 6000)
+      .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; })
+      .then(function(d){
+        if (d && d.dns === false) { flashMsg("Is domain par email nahi pahunch sakta — sahi domain wala email daalo."); return; }
+        if (d && d.disposable === true) { flashMsg("Temporary/disposable email allowed nahi hai — apna asli email daalo."); return; }
+        var err = signUp(nm, email, pass);
+        if (err) { flashMsg(err); return; }
+        flashMsg("Account created. Please log in.");
+        authTab = "login";
+        renderAuth();
+      });
   } else {
     var err2 = logIn(email, pass);
     if (err2) { flashMsg(err2); return; }
