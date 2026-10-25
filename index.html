@@ -16,7 +16,7 @@ header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:10}
 .brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}
 main{max-width:1100px;margin:0 auto;padding:22px 20px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
-.hero{background:linear-gradient(120deg,var(--navy),var(--blue));color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
+.hero{background:linear-gradient(120deg,var(--navy),var(--blue) 55%,#5db2f0);color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
 .hero h1{margin:0 0 6px}
 .hero p{margin:0;color:#dbeeff}
 .demo-note{background:#fff8e1;border:1px solid #ffe08a;border-radius:12px;padding:12px 16px;margin-bottom:18px}
@@ -36,6 +36,19 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 .tabs button.active{background:var(--navy);color:#fff}
 .pill{display:inline-block;background:var(--light);color:var(--navy);border-radius:999px;padding:2px 10px;font-size:.85rem;font-weight:600}
 @media (max-width:600px){main{padding-left:14px;padding-right:14px}}
+.search-card{background:#fff;border-radius:16px;padding:18px;box-shadow:var(--shadow);margin-top:20px;color:var(--ink)}
+.search-card label{margin:0}
+.search-grid{display:grid;grid-template-columns:1.2fr 1.2fr 1fr 1fr auto;gap:12px;align-items:end}
+.search-card .btn{height:44px;white-space:nowrap}
+.trust{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:18px}
+.trust .card{margin-bottom:0}
+.route-card h3{margin:0 0 4px}
+.route-card .fare{font-size:1.4rem;font-weight:700;color:var(--navy);margin:8px 0}
+.footer{border-top:1px solid var(--line);background:#fff;border-radius:16px;margin-top:8px}
+.footer-inner{padding:24px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+.footer h4{margin:0 0 8px;color:var(--navy)}
+.footer a{color:var(--blue);text-decoration:none;cursor:pointer}
+@media (max-width:700px){.search-grid{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -48,6 +61,7 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 <a id="navReports" onclick="showView('reports')" style="display:none">Reports</a>
 <span id="navUser" style="margin-left:auto"></span>
 <a id="navAuth" onclick="showView('auth')">Login</a>
+<a id="navRegister" onclick="authTab='signup';showView('auth')">Register</a>
 </div></header>
 <main>
 <div class="demo-note"><b>Demo only.</b> Accounts and bookings live only in this browser (localStorage) and are lost if you clear site data. Seed data below is demo data, not real schedules or fares. Passwords use a simple demo hash — this is <b>not production security</b>. Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</div>
@@ -202,6 +216,7 @@ function updateNav() {
   document.getElementById("navUser").textContent = session ? session.name + " (" + session.role + ")" : "";
   document.getElementById("navAuth").textContent = session ? "Logout" : "Login";
   document.getElementById("navAuth").onclick = session ? logOut : function () { showView("auth"); };
+  document.getElementById("navRegister").style.display = session ? "none" : "";
 }
 
 // ---------- Booking logic (mirrors the Flask app) ----------
@@ -273,6 +288,46 @@ var MASTER_TABS = [
 ];
 var masterTab = "transportTypes";
 
+// ---------- Home search (mirrors the Flask /search route) ----------
+var pendingBooking = null; // {tid, date} set by a search / popular-route Book button
+function searchTransports(from, to, typeId) {
+  return allOf("transports").filter(function (t) {
+    return (!from || t.from === from) && (!to || t.to === to) && (!typeId || t.typeId === typeId);
+  });
+}
+function renderSearchResults(list, date) {
+  var el = document.getElementById("home-search-results");
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = '<div class="card"><h3>No transport on this route.</h3>' +
+      "<p class='muted'>No transport matches this search. Try different cities, any transport type, " +
+      "or browse the Transports list under Masters.</p></div>";
+    return;
+  }
+  el.innerHTML = "<h2>Results</h2>" + list.map(function (t) {
+    var seatsText = date
+      ? (t.capacity - bookedSeatsFor(t.id, date).length) + " seat(s) left on " + esc(date)
+      : "Capacity " + t.capacity + " seats";
+    return '<div class="card"><h3>' + esc(t.name) + "</h3>" +
+      "<p>" + esc(t.from) + " &rarr; " + esc(t.to) + " &middot; " + esc(t.dep) + " &ndash; " + esc(t.arr) +
+      " &middot; " + esc(typeName(t.typeId)) + "</p>" +
+      "<p><b>Rs. " + t.rMajor + " per seat</b> &middot; " + seatsText + "</p>" +
+      '<p><button onclick="bookTransport(' + t.id + ", '" + esc(date || "") + '\')">Book</button></p></div>';
+  }).join("");
+}
+function doHomeSearch() {
+  var from = document.getElementById("hs_from").value;
+  var to = document.getElementById("hs_to").value;
+  var typeId = parseInt(document.getElementById("hs_type").value, 10) || 0;
+  var date = document.getElementById("hs_date").value;
+  renderSearchResults(searchTransports(from, to, typeId), date);
+}
+function bookTransport(tid, date) {
+  if (!requireLogin()) return;
+  pendingBooking = {tid: tid, date: date || ""};
+  showView("booking");
+}
+
 function renderHome() {
   var recent = bookings.slice().sort(function (a, b) { return b.bookNo - a.bookNo; }).slice(0, 5);
   var stats = [
@@ -285,16 +340,58 @@ function renderHome() {
     var t = transportById(b.tid);
     return [b.bookNo, b.bookDate, b.custName, t ? t.name : "-"];
   });
+  var cityOpts = '<option value="">Anywhere</option>' + allOf("cities").map(function (c) {
+    return '<option value="' + esc(c.name) + '">' + esc(c.name) + "</option>";
+  }).join("");
+  var typeOpts = '<option value="">Any type</option>' + allOf("transportTypes").map(function (t) {
+    return '<option value="' + t.id + '">' + esc(t.name) + "</option>";
+  }).join("");
+  var searchCard = '<div class="search-card"><div class="search-grid">' +
+    '<label>From<select id="hs_from">' + cityOpts + "</select></label>" +
+    '<label>To<select id="hs_to">' + cityOpts + "</select></label>" +
+    '<label>Date<input id="hs_date" type="date"></label>' +
+    '<label>Transport Type<select id="hs_type">' + typeOpts + "</select></label>" +
+    '<p style="margin:0"><button class="btn" onclick="doHomeSearch()">Search</button></p>' +
+    "</div></div>";
+  var routeCards = allOf("routes").map(function (r) {
+    var onRoute = allOf("transports").filter(function (t) { return t.routeId === r.id; });
+    if (!onRoute.length) return "";
+    var cheapest = onRoute.reduce(function (m, t) { return t.rMajor < m.rMajor ? t : m; }, onRoute[0]);
+    return '<div class="card route-card"><h3>' + esc(r.from) + " &rarr; " + esc(r.to) + "</h3>" +
+      '<p class="muted">' + esc(r.name) + (r.via.length ? " &middot; Via: " + esc(r.via.join(", ")) : "") + "</p>" +
+      '<p class="fare">From Rs. ' + cheapest.rMajor + " per seat</p>" +
+      '<p><button onclick="bookTransport(' + cheapest.id + ", '')\">Book</button> " +
+      '<button class="secondary" onclick="document.getElementById(\'hs_from\').value=\'' + esc(r.from) +
+      "';document.getElementById('hs_to').value='" + esc(r.to) + "';doHomeSearch();\">View Transports</button></p></div>";
+  }).join("");
   document.getElementById("view-home").innerHTML =
-    '<div class="hero"><h1>Book a ticket in under a minute.</h1>' +
-    "<p>Transports, routes, customers and bookings — the TSN Ticket Booking system as a static demo. No Oracle or Windows needed.</p></div>" +
+    '<div class="hero"><h1>Your journey begins here.</h1>' +
+    "<p>Book bus and train tickets across the network &mdash; transparent fares, seats of your choice, and instant cancellation.</p>" +
+    searchCard + "</div>" +
+    '<div id="home-search-results"></div>' +
+    '<div class="trust">' +
+    '<div class="card"><h3>&#10003; Transparent fares</h3><p class="muted">What you see is what you pay: total = seats &times; the transport\'s major (r_major) rate. No hidden charges.</p></div>' +
+    '<div class="card"><h3>&#10003; Seat of your choice</h3><p class="muted">Pick your own seat numbers. A seat already booked for the same transport and date can never be sold twice.</p></div>' +
+    '<div class="card"><h3>&#10003; Instant cancellation</h3><p class="muted">Cancel any booking and its seats are freed immediately for other travellers.</p></div>' +
+    "</div>" +
     '<div class="grid">' + stats + "</div>" +
     '<div class="card"><h2>Recent bookings</h2>' + tableHtml(["Booking No", "Date", "Customer", "Transport"], rows) +
     '<p><button onclick="showView(\'booking\')">New Booking</button> ' +
     '<button class="secondary" onclick="showView(\'masters\')">Manage Masters</button></p></div>' +
-    '<div class="card"><h2>About this demo</h2><p class="muted">The original project is VB.NET WinForms + Oracle. ' +
-    "This demo keeps the same masters, transactions and reports in the browser. Seed data is demo data. " +
-    "Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</p></div>";
+    "<h2>Popular Routes</h2>" +
+    '<div class="grid">' + (routeCards || "<p>No routes yet.</p>") + "</div>" +
+    '<div class="card"><h2>Why TSN</h2><ul>' +
+    "<li><b>Complete masters</b> &mdash; transport types, transports, routes with via stops, payment modes and customers, all in one place.</li>" +
+    "<li><b>Reports for all six areas</b> &mdash; the original R1&ndash;R6 reports as plain tables (admin only).</li>" +
+    "<li><b>Login-protected booking</b> &mdash; you see and cancel only your own bookings; admins see everything.</li>" +
+    '</ul><p class="muted">The original project is VB.NET WinForms + Oracle. ' +
+    "This demo keeps the same masters, transactions and reports in the browser. Seed data is demo data.</p></div>" +
+    '<div class="footer"><div class="footer-inner">' +
+    "<div><h4>Help</h4><p><a onclick=\"showView('masters')\">Masters</a> &middot; <a onclick=\"showView('booking')\">New Booking</a> &middot; <a onclick=\"showView('reports')\">Reports</a></p>" +
+    "<p class='muted'>Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</p></div>" +
+    "<div><h4>About</h4><p class='muted'>TSN Ticket Booking &mdash; a transport ticket booking system, here as a static demo. Demo only: accounts and bookings live only in this browser.</p></div>" +
+    "<div><h4>Contact</h4><p><a href='https://github.com/rishabh4630/Ticket-Booking-Platform' target='_blank' rel='noreferrer'>GitHub repository</a></p></div>" +
+    "</div></div>";
 }
 
 function masterRows(kind) {
@@ -410,6 +507,12 @@ function renderBooking() {
     '<label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input id="bk_seats" placeholder="1, 2"></label>' +
     '<p class="muted" id="bk_total">Fare rule: total = seats &times; the transport\'s major (r_major) rate.</p>' +
     '<p><button onclick="submitBooking()">Book Tickets</button></p></div>';
+  // Preselect from a search / popular-route Book button (set by bookTransport).
+  if (pendingBooking) {
+    document.getElementById("bk_tid").value = String(pendingBooking.tid);
+    if (pendingBooking.date) document.getElementById("bk_date").value = pendingBooking.date;
+    pendingBooking = null;
+  }
   var upd = function () {
     var sel = document.getElementById("bk_tid");
     var rate = parseInt(sel.options[sel.selectedIndex].dataset.rate || "0", 10);
