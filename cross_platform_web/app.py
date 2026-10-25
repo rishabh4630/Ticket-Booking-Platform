@@ -277,7 +277,7 @@ header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:10}
 .topbar a{color:#fff;text-decoration:none;font-weight:600}
 .topbar a.cta{background:var(--blue);padding:7px 14px;border-radius:999px}
 .brand{font-size:1.15rem;margin-right:auto}
-.brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}
+.brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}.nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.nav-links a{font-weight:700;font-size:.95rem;letter-spacing:.2px;padding:8px 12px;border-radius:10px}.nav-links a:hover{background:rgba(255,255,255,.16)}.nav-auth{display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap;padding-left:14px;border-left:1px solid rgba(255,255,255,.25)}.nav-auth a{font-weight:600;padding:8px 10px;border-radius:10px}.nav-auth a:hover{background:rgba(255,255,255,.16)}.topbar a.brand{font-weight:800}@media (max-width:600px){.nav-auth{margin-left:0;padding-left:0;border-left:0}}
 main{max-width:1100px;margin:0 auto;padding:22px 20px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
 .hero{background:linear-gradient(120deg,var(--navy),var(--blue) 55%,#5db2f0);color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
@@ -311,17 +311,21 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 </style></head><body>
 <header><div class="topbar">
 <a class="brand" href="{{ url_for('home') }}">TSN Ticket Booking<span>Transport Service Network - Web Version</span></a>
+<nav class="nav-links">
 <a href="{{ url_for('home') }}">Home</a>
 <a href="{{ url_for('masters_index') }}">Masters</a>
 <a class="cta" href="{{ url_for('new_booking') }}">New Booking</a>
 <a href="{{ url_for('bookings') }}">Bookings</a>
 <a href="{{ url_for('reports') }}">Reports</a>
+</nav>
+<nav class="nav-auth">
 {% if session.get('user_id') %}
 <a href="{{ url_for('logout') }}">Logout ({{ session.get('user_name','') }})</a>
 {% else %}
 <a href="{{ url_for('login') }}">Login</a>
 <a href="{{ url_for('register') }}">Register</a>
 {% endif %}
+</nav>
 </div></header>
 <main>
 {% with messages = get_flashed_messages() %}
