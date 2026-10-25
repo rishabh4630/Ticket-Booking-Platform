@@ -120,6 +120,7 @@ header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);bo
 .topbar{row-gap:0}
 .nav-links{order:3;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
 .nav-auth{order:2;margin-left:auto}
+.route-card{cursor:pointer}
 </style>
 </head>
 <body>
@@ -705,11 +706,12 @@ function renderHome() {
     var onRoute = allOf("transports").filter(function (t) { return t.routeId === r.id; });
     if (!onRoute.length) return "";
     var cheapest = onRoute.reduce(function (m, t) { return t.rMajor < m.rMajor ? t : m; }, onRoute[0]);
-    return '<div class="card route-card"><h3>' + esc(r.from) + " &rarr; " + esc(r.to) + "</h3>" +
+    return '<div class="card route-card" onclick="document.getElementById(\'hs_from\').value=\'' + esc(r.from) +
+      "';document.getElementById('hs_to').value='" + esc(r.to) + "';doHomeSearch();\"><h3>" + esc(r.from) + " &rarr; " + esc(r.to) + "</h3>" +
       '<p class="muted">' + esc(r.name) + (r.via.length ? " &middot; Via: " + esc(r.via.join(", ")) : "") + "</p>" +
       '<p class="fare">From Rs. ' + cheapest.rMajor + " per seat</p>" +
-      '<p><button onclick="bookTransport(' + cheapest.id + ", '')\">Book</button> " +
-      '<button class="secondary" onclick="document.getElementById(\'hs_from\').value=\'' + esc(r.from) +
+      '<p><button onclick="event.stopPropagation();bookTransport(' + cheapest.id + ", '')\">Book</button> " +
+      '<button class="secondary" onclick="event.stopPropagation();document.getElementById(\'hs_from\').value=\'' + esc(r.from) +
       "';document.getElementById('hs_to').value='" + esc(r.to) + "';doHomeSearch();\">View Transports</button></p></div>";
   }).join("");
   document.getElementById("view-home").innerHTML =
@@ -869,7 +871,17 @@ function renderBooking() {
       esc(t.from) + " to " + esc(t.to) + ", " + esc(t.dep) + ") - Rs. " + t.rMajor +
       " per seat, capacity " + t.capacity + "</option>";
   }).join("");
-  var cOpts = allOf("customers").map(function (c) {
+  var custList = allOf("customers");
+  if (session && !isAdmin()) {
+    var myCust = custList.find(function (c) { return (c.name || "").trim().toLowerCase() === (session.name || "").trim().toLowerCase(); });
+    if (!myCust) {
+      myCust = {code: nextId(custList, "code"), name: session.name, age: 0, sex: "", address: "", street: 0, city: 0, state: 0, phone: ""};
+      addedMasters.customers.push(myCust);
+      save("tsn_added_masters", addedMasters);
+    }
+    custList = [myCust];
+  }
+  var cOpts = custList.map(function (c) {
     return '<option value="' + c.code + '">' + esc(c.name) + "</option>";
   }).join("");
   var pOpts = allOf("payments").map(function (p) {
@@ -1178,6 +1190,12 @@ function trainSearch() {
   if (!q || q.length > 64) { box.innerHTML = "<p>Train ka naam ya number daalo (1-64 characters).</p>"; return; }
   trainFetch("/api/v1/trains/search", "query=" + encodeURIComponent(q), "ti-out-search");
 }
+function trainSchedule() {
+  var no = (document.getElementById("ti-schedno").value || "").trim();
+  var box = document.getElementById("ti-out-schedule");
+  if (!/^\d{4,5}$/.test(no)) { box.innerHTML = "<p>Train number 4-5 digits ka hona chahiye.</p>"; return; }
+  trainFetch("/api/v1/trains/" + no + "/schedule", "", "ti-out-schedule");
+}
 function renderTrainInfo() {
   var hasKey = !!trainKey();
   var dis = hasKey ? "" : " disabled";
@@ -1212,7 +1230,10 @@ function renderTrainInfo() {
     '<p><button onclick="trainPnr()"' + dis + ">Check PNR Status</button></p><div id=\"ti-out-pnr\"></div></div>" +
     '<div class="card"><h3>Train dhoondo (naam/number se)</h3>' +
     '<label>Train naam ya number<input id="ti-query" placeholder="e.g. 12301"' + dis + "></label>" +
-    '<p><button onclick="trainSearch()"' + dis + ">Search Train</button></p><div id=\"ti-out-search\"></div></div>";
+    '<p><button onclick="trainSearch()"' + dis + ">Search Train</button></p><div id=\"ti-out-search\"></div></div>" +
+    '<div class="card"><h3>Train schedule</h3>' +
+    '<label>Train number<input id="ti-schedno" placeholder="e.g. 12301"' + dis + "></label>" +
+    '<p><button onclick="trainSchedule()"' + dis + '>View Schedule</button></p><div id="ti-out-schedule"></div></div>';
   document.getElementById("ti-keystate").textContent = hasKey ? "Key save hai." : "Key save nahi hai.";
 }
 
