@@ -1434,7 +1434,7 @@ def ticket(book_no):
     ).fetchall()
     seat_list = ", ".join(str(s["seat_no"]) for s in seats)
     total = len(seats) * transport["r_major"]
-    body = f"""<div class="card"><h2>Ticket - Booking {book_no}</h2>
+    body = f"""<div class="card" id="ticket-card"><h2>Ticket - Booking {book_no}</h2>
     <table>
     <tr><th>Customer</th><td>{booking["cust_name"]}</td></tr>
     <tr><th>Transport</th><td>{transport["tname"]} ({transport["st_pos"]} to {transport["dest"]})</td></tr>
@@ -1446,8 +1446,22 @@ def ticket(book_no):
     <tr><th>Payment mode</th><td>{payment["pname"] if payment else "-"}</td></tr>
     </table>
     <p class="noprint"><button onclick="window.print()">Print Ticket</button>
+    <button onclick="downloadTicketPDF({book_no})">Download PDF</button>
     <a class="btn secondary" href="/booking/{book_no}/cancel">Cancel Booking</a>
-    <a class="btn secondary" href="/bookings">All Bookings</a></p></div>"""
+    <a class="btn secondary" href="/bookings">All Bookings</a></p></div>""" + """
+<script>
+function downloadTicketPDF(bookNo) {
+  var el = document.getElementById('ticket-card');
+  if (!el) { window.print(); return; }
+  function go() { html2pdf().set({margin: 10, filename: 'TSN-Ticket-' + bookNo + '.pdf', html2canvas: {scale: 2}, jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'}}).from(el).save(); }
+  if (window.html2pdf) { go(); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+  s.onload = go;
+  s.onerror = function () { window.print(); };
+  document.head.appendChild(s);
+}
+</script>"""
     return page(f"Ticket {book_no}", body)
 
 
