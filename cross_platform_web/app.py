@@ -1321,6 +1321,23 @@ def new_booking():
             flash("Please check the form values (seat numbers must be numbers).")
             return redirect(url_for("new_booking"))
         transport = db.execute("SELECT * FROM transports WHERE tid=?", (tid,)).fetchone()
+        # Typed name wins over the dropdown: reuse the matching customer, or
+        # create one (it then appears in Masters -> Customers too).
+        new_name = (f.get("new_cust_name") or "").strip()
+        if new_name:
+            existing = db.execute(
+                "SELECT cust_code FROM cust_det WHERE LOWER(cust_name)=LOWER(?) ORDER BY id LIMIT 1",
+                (new_name,),
+            ).fetchone()
+            if existing:
+                cust_code = existing["cust_code"]
+            else:
+                cust_code = next_code(db, "customers", "cust_code")
+                db.execute("INSERT INTO customers VALUES (?,?,?,?,?,?)",
+                           (cust_code, "", None, None, None, ""))
+                db.execute("INSERT INTO cust_det (cust_code, cust_name, age, sex) VALUES (?,?,?,?)",
+                           (cust_code, new_name, None, ""))
+                db.commit()
         cust = db.execute(
             "SELECT cust_name FROM cust_det WHERE cust_code=? ORDER BY id LIMIT 1",
             (cust_code,),
@@ -1372,6 +1389,7 @@ def new_booking():
     body = f"""<div class="card"><h2>New Booking</h2><form method="post" id="bookForm">
     <label>Transport<select name="tid" id="tidSel">{transport_opts}</select></label>
     {select_field("cust_code", "Customer", [(c["cust_code"], c["cust_name"] or f'Customer {c["cust_code"]}') for c in customers])}
+    <label>Or new customer name (if not in the list)<input name="new_cust_name" placeholder="e.g. Aarav Kumar"></label>
     <label>Travel date<input name="book_date" type="date" required value="{pre_date}"></label>
     {select_field("pmode_id", "Payment mode", [(p["pmid"], p["pname"]) for p in payments])}
     <label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input name="seats" required placeholder="1, 2"></label>
