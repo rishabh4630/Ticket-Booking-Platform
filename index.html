@@ -121,6 +121,7 @@ header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);bo
 .nav-links{order:3;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
 .nav-auth{order:2;margin-left:auto}
 .route-card{cursor:pointer}
+@media print{header,.noprint,.demo-note,.footer{display:none}}
 </style>
 </head>
 <body>
@@ -958,7 +959,8 @@ function showTicket(bookNo) {
     "<tr><th>Rate per seat (r_major)</th><td>Rs. " + (t ? t.rMajor : 0) + "</td></tr>" +
     "<tr><th>Total fare</th><td><b>Rs. " + total + "</b> (" + b.seats.length + " seat(s) x Rs. " + (t ? t.rMajor : 0) + ")</td></tr>" +
     "<tr><th>Payment mode</th><td>" + esc(p ? p.name : "-") + "</td></tr></table>" +
-    '<p><button class="secondary" onclick="confirmCancel(' + b.bookNo + ')">Cancel Booking</button> ' +
+    '<p class="noprint"><button onclick="window.print()">Print Ticket</button> ' +
+    '<button class="secondary" onclick="confirmCancel(' + b.bookNo + ')">Cancel Booking</button> ' +
     '<button class="secondary" onclick="showView(\'bookings\')">All Bookings</button></p></div>';
   ["view-home", "view-masters", "view-booking", "view-bookings", "view-reports", "view-auth"].forEach(function (id) {
     document.getElementById(id).style.display = "none";
