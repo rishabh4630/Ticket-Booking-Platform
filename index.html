@@ -168,7 +168,7 @@ table{display:block;max-width:100%;overflow-x:auto}
 // ---------- TSN Ticket Booking - static live demo ----------
 // Same seed data, fare rule and booking rules as the Flask web version.
 // Accounts and bookings live only in this browser (localStorage).
-var OWNER_EMAIL = "rishabhsingh4630@gmail.com"; // to-confirm, same as Flask app
+var DEMO_ADMIN_CODE = "tsn-admin-2026"; // Demo-only admin passcode. Change this to any code you like. It is never shown anywhere on the site.
 
 // ---------- Seed data (demo data only) ----------
 var SEED = {
@@ -429,11 +429,6 @@ function logIn(email, password) {
   email = email.trim().toLowerCase();
   var acc = accounts.find(function (a) { return a.email === email; });
   if (!acc || acc.hash !== demoHash(password)) return "Invalid email or password.";
-  // Owner email auto-upgrades to admin on login (same as the Flask app).
-  if (acc.email === OWNER_EMAIL && acc.role !== "admin") {
-    acc.role = "admin";
-    save("tsn_accounts", accounts);
-  }
   session = {name: acc.name, email: acc.email, role: acc.role};
   save("tsn_session", session);
   return null;
@@ -443,6 +438,23 @@ function logOut() {
   save("tsn_session", null);
   flashMsg("Logged out.");
   showView("home");
+}
+function unlockAdmin() {
+  if (!session) { flashMsg("Please log in first."); return; }
+  var code = document.getElementById("admin_code").value || "";
+  var acc = accounts.find(function (a) { return a.email === session.email; });
+  if (!acc) { flashMsg("Account not found. Please log in again."); return; }
+  if (code === DEMO_ADMIN_CODE) {
+    acc.role = "admin";
+    session.role = "admin";
+    save("tsn_accounts", accounts);
+    save("tsn_session", session);
+    updateNav();
+    flashMsg("Admin access unlocked.");
+    showView("home");
+  } else {
+    flashMsg("Wrong admin code.");
+  }
 }
 
 // ---------- UI helpers ----------
@@ -810,7 +822,7 @@ function renderMasters() {
       '<p><button onclick="addMaster()">Save</button></p>' +
       '<p class="muted">Admin only. Added rows are saved in this browser only.</p></div>';
   } else {
-    addForm = '<p class="muted">Adding a master row is admin only — log in with the owner email to add rows.</p>';
+    addForm = '<p class="muted">Adding a master row is admin only.</p>';
   }
   document.getElementById("view-masters").innerHTML =
     "<h2>Masters</h2><div class='tabs'>" + tabs + "</div>" +
@@ -1059,8 +1071,11 @@ function renderAuth() {
   var title = authTab === "login" ? "Login" : "Sign Up";
   var nameField = authTab === "signup" ? '<label>Full name<input id="auth_name"></label>' : "";
   var note = authTab === "login"
-    ? '<p class="muted">Note: logging in with the owner email (rishabhsingh4630@gmail.com) automatically becomes admin — please confirm/change this email if it is not the owner\'s real email. Accounts are stored only in this browser with a demo hash, not production security.</p>'
+    ? '<p class="muted">Accounts are stored only in this browser with a demo hash, not production security. Do not use a real password here.</p>'
     : '<p class="muted">Your account is stored only in this browser. Use any email and password; nothing leaves this device.</p>';
+  var adminBox = authTab === "login"
+    ? '<details style="margin-top:12px"><summary style="cursor:pointer" class="muted">Admin access</summary><label>Admin code<input id="admin_code" type="password"></label><p><button class="secondary" onclick="unlockAdmin()">Unlock admin access</button></p></details>'
+    : "";
   var switchLink = authTab === "login"
     ? '<p class="muted">No account yet? <a onclick="authTab=\'signup\';renderAuth()" style="cursor:pointer">Sign up</a></p>'
     : '<p class="muted">Already have an account? <a onclick="authTab=\'login\';renderAuth()" style="cursor:pointer">Log in</a></p>';
@@ -1068,7 +1083,7 @@ function renderAuth() {
     '<div class="card" style="max-width:480px;margin:0 auto"><h2>' + title + "</h2>" + tabs + nameField +
     '<label>Email<input id="auth_email" type="email"></label>' +
     '<label>Password<input id="auth_pass" type="password"></label>' +
-    '<p><button onclick="submitAuth()">' + title + "</button></p>" + note + switchLink + "</div>";
+    '<p><button onclick="submitAuth()">' + title + "</button></p>" + note + adminBox + switchLink + "</div>";
 }
 function submitAuth() {
   var email = document.getElementById("auth_email").value;
