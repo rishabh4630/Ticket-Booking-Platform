@@ -420,6 +420,8 @@ function requireLogin() {
 function signUp(name, email, password) {
   email = email.trim().toLowerCase();
   if (!name.trim() || !email || !password) return "Name, email and password are required.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return "Sahi email daalo, jaise naam@example.com";
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return "Password kam se kam 8 characters ka ho, usme letter aur number dono hon.";
   if (accounts.some(function (a) { return a.email === email; })) return "That email is already registered. Please log in.";
   accounts.push({name: name.trim(), email: email, hash: demoHash(password), role: "customer"});
   save("tsn_accounts", accounts);
@@ -1149,7 +1151,7 @@ function renderAuth() {
   var nameField = authTab === "signup" ? '<label>Full name<input id="auth_name"></label>' : "";
   var note = authTab === "login"
     ? '<p class="muted">Accounts are stored only in this browser with a demo hash, not production security. Do not use a real password here.</p>'
-    : '<p class="muted">Your account is stored only in this browser. Use any email and password; nothing leaves this device.</p>';
+    : '<p class="muted">Your account is stored only in this browser. Email sahi format me aur password kam se kam 8 characters (letter + number) hona chahiye; nothing leaves this device.</p>';
   var switchLink = authTab === "login"
     ? '<p class="muted">No account yet? <a onclick="authTab=\'signup\';renderAuth()" style="cursor:pointer">Sign up</a></p>'
     : '<p class="muted">Already have an account? <a onclick="authTab=\'login\';renderAuth()" style="cursor:pointer">Log in</a></p>';

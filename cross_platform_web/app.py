@@ -891,6 +891,12 @@ def register():
         if not f["name"].strip() or not f["email"].strip() or not f["password"]:
             flash("Name, email and password are required.")
             return redirect(url_for("register"))
+        if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$", f["email"].strip()):
+            flash("Please enter a valid email address (e.g. name@example.com).")
+            return redirect(url_for("register"))
+        if len(f["password"]) < 8 or not re.search(r"[A-Za-z]", f["password"]) or not re.search(r"[0-9]", f["password"]):
+            flash("Password must be at least 8 characters and include both letters and numbers.")
+            return redirect(url_for("register"))
         if db.execute("SELECT id FROM users WHERE email=?", (f["email"].strip(),)).fetchone():
             flash("That email is already registered. Please log in.")
             return redirect(url_for("login"))
