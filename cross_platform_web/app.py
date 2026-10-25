@@ -22,9 +22,14 @@ The original demo login (hardcoded) is NOT copied here: this version has
 proper signup/login with hashed passwords (see below).
 """
 
+import html
+import json
 import os
 import re
 import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date
 from functools import wraps
 
@@ -42,6 +47,197 @@ app.secret_key = "tsn-ticket-booking-dev-key-change-me"
 # NOTE (same as the Airline project): this email is the GitHub account email
 # on file and must be confirmed/changed if it is not the owner's real email.
 OWNER_EMAIL = "rishabhsingh4630@gmail.com"
+
+
+# ---------------------------------------------------------------------------
+# Free external APIs (keyless; never allowed to break search or booking)
+# OSRM (road distance/driving time), Open-Meteo (destination weather) and
+# SearchPinCode (PIN -> post office/city/state) are all free with no key.
+# Every call has a short timeout and every failure degrades to "info
+# uplabdh nahi" -- the search results and booking flow always still render.
+# ---------------------------------------------------------------------------
+CITY_COORDS = {
+    "Lucknow": (26.8467, 80.9462),
+    "Delhi": (28.6139, 77.2090),
+    "Mumbai": (19.0760, 72.8777),
+    "Bengaluru": (12.9716, 77.5946),
+    "Varanasi": (25.3176, 82.9739),
+}
+
+
+def _fetch_json(url, timeout=5, headers=None):
+    """GET a JSON URL, or None on any failure (timeout, HTTP error, bad JSON)."""
+    req = urllib.request.Request(url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+
+
+def weather_label(code):
+    """WMO weather code -> short Hinglish-friendly label."""
+    if code is None:
+        return "mausam uplabdh nahi"
+    code = int(code)
+    if code == 0:
+        return "Saaf aasmaan"
+    if code == 1:
+        return "Zyaada tar saaf"
+    if code == 2:
+        return "Halke baadal"
+    if code == 3:
+        return "Baadal"
+    if code in (45, 48):
+        return "Kohra"
+    if code in (51, 53, 55, 56, 57):
+        return "Halki boondabaandi"
+    if code in (61, 80):
+        return "Halki baarish"
+    if code in (63, 81):
+        return "Baarish"
+    if code in (65, 82, 66, 67):
+        return "Tez baarish"
+    if code in (71, 73, 75, 77, 85, 86):
+        return "Barf"
+    if code in (95, 96, 99):
+        return "Aandhi-toofan"
+    return "mausam uplabdh nahi"
+
+
+def fmt_distance(metres):
+    if metres < 10000:
+        return f"{metres / 1000:.1f} km"
+    return f"{round(metres / 1000)} km"
+
+
+def fmt_duration(seconds):
+    hours = int(seconds // 3600)
+    minutes = int(round((seconds % 3600) / 60))
+    if minutes == 60:
+        hours += 1
+        minutes = 0
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def resolve_coords(city):
+    """(lat, lon) for a city: seed table first, else keyless Nominatim."""
+    if city in CITY_COORDS:
+        return CITY_COORDS[city]
+    data = _fetch_json(
+        "https://nominatim.openstreetmap.org/search?format=json&limit=1&q="
+        + urllib.parse.quote(city + ", India"),
+        headers={"User-Agent": "TSN-Ticket-Booking/1.0 (student demo)"},
+    )
+    if data and isinstance(data, list) and data:
+        try:
+            return (float(data[0]["lat"]), float(data[0]["lon"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+    return None
+
+
+def route_info(from_city, to_city):
+    """Road distance + driving time + destination weather. Never raises;
+    returns a dict that may be partial or empty when a service fails."""
+    info = {}
+    try:
+        start = resolve_coords(from_city)
+        dest = resolve_coords(to_city)
+        if start and dest:
+            data = _fetch_json(
+                "https://router.project-osrm.org/route/v1/driving/"
+                f"{start[1]},{start[0]};{dest[1]},{dest[0]}?overview=false"
+            )
+            routes = (data or {}).get("routes") or []
+            if routes:
+                info["distance"] = fmt_distance(routes[0]["distance"])
+                info["duration"] = fmt_duration(routes[0]["duration"])
+        if dest:
+            data = _fetch_json(
+                "https://api.open-meteo.com/v1/forecast"
+                f"?latitude={dest[0]}&longitude={dest[1]}"
+                "&current=temperature_2m,weather_code&timezone=Asia%2FKolkata"
+            )
+            current = (data or {}).get("current") or {}
+            if "temperature_2m" in current:
+                info["weather"] = (
+                    f"{current['temperature_2m']}°C, "
+                    f"{weather_label(current.get('weather_code'))}"
+                )
+    except Exception:
+        pass
+    return info
+
+
+# ---------------------------------------------------------------------------
+# Train live data (Flask only, via RapidAPI "Indian Railway API")
+# The listing page confirms the feature areas (trains between stations, live
+# running status, PNR status) and a free BASIC plan, but its Endpoints tab
+# does not expose exact paths without login, so NO endpoint path is
+# hard-coded here -- paths come from env vars once confirmed on the listing.
+# Never invent endpoint URLs. The key is read only from the environment and
+# is never sent to the browser or the static demo.
+# ---------------------------------------------------------------------------
+RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "indian-railway-api1.p.rapidapi.com")
+TRAIN_API_ENDPOINTS = {
+    "between": os.environ.get("RAPIDAPI_TRAINS_BETWEEN", ""),
+    "live": os.environ.get("RAPIDAPI_LIVE_STATUS", ""),
+    "pnr": os.environ.get("RAPIDAPI_PNR_STATUS", ""),
+}
+
+
+def rapidapi_get(path, params):
+    """Call RapidAPI server-side. Returns (data, error); error is one of
+    'no-key', 'no-endpoint', or a short failure message. Never raises."""
+    key = os.environ.get("RAPIDAPI_KEY", "")
+    if not key:
+        return None, "no-key"
+    if not path:
+        return None, "no-endpoint"
+    url = "https://" + RAPIDAPI_HOST + path + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(
+        url, headers={"X-RapidAPI-Key": key, "X-RapidAPI-Host": RAPIDAPI_HOST}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace")), None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def train_setup_card():
+    return """<div class="card"><h2>Train Info — setup chahiye</h2>
+    <p>Live train data (do stations ke beech trains, live running status, PNR status)
+    ke liye <b>free RapidAPI key</b> chahiye. Key ke bina ye page error nahi dega —
+    bas setup steps dikhayega.</p>
+    <ol>
+    <li><b>RapidAPI par free account banao</b> (rapidapi.com).</li>
+    <li><b>Indian Railway API</b> listing kholo aur <b>free BASIC plan</b> subscribe karo.</li>
+    <li>Apni key copy karo aur server start karne se <b>pehle</b> environment variable me daalo:
+    Mac/Linux par <code>export RAPIDAPI_KEY=apki-key</code>, Windows par <code>set RAPIDAPI_KEY=apki-key</code>.</li>
+    <li>Server restart karo — phir ye page live train data dikhayega.</li>
+    </ol>
+    <p class="muted">Key kabhi code me, GitHub par ya static demo me mat daalo — sirf server
+    ke environment me rakho. RapidAPI key ke bina koi live train call nahi bheji jaati.</p></div>"""
+
+
+def train_endpoint_card():
+    return """<div class="card"><h2>Train Info — endpoint configure karna baaki hai</h2>
+    <p>RapidAPI key mil gayi hai, lekin is API ke <b>exact endpoint paths</b> listing se
+    confirm nahi ho paye (RapidAPI page ka Endpoints tab bina login ke paths nahi dikhata),
+    isliye koi live call nahi bheji gayi — galat/andaze wale URL par call karna sahi nahi hoga.</p>
+    <p>Listing ke Endpoints tab se path dekhkar server start karne se pehle ye environment
+    variables daalo, phir server restart karo:</p>
+    <ul>
+    <li><code>RAPIDAPI_TRAINS_BETWEEN</code> — do stations ke beech trains wala path</li>
+    <li><code>RAPIDAPI_LIVE_STATUS</code> — live running status wala path</li>
+    <li><code>RAPIDAPI_PNR_STATUS</code> — PNR status wala path</li>
+    </ul>
+    <p class="muted">Feature areas listing se confirmed hain: trains between stations,
+    live running status aur 10-digit PNR status. Paths confirm hote hi ye forms live ho jayenge.</p></div>"""
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +504,8 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 .footer h4{margin:0 0 8px;color:var(--navy)}
 .footer a{color:var(--blue);text-decoration:none}
 @media (max-width:700px){.search-grid{grid-template-columns:1fr 1fr}}
+.route-info{border-left:4px solid var(--blue)}
+.route-info p{margin:4px 0 0}
 </style></head><body>
 <header><div class="topbar">
 <a class="brand" href="{{ url_for('home') }}">TSN Ticket Booking<span>Transport Service Network - Web Version</span></a>
@@ -317,6 +515,7 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 <a class="cta" href="{{ url_for('new_booking') }}">New Booking</a>
 <a href="{{ url_for('bookings') }}">Bookings</a>
 <a href="{{ url_for('reports') }}">Reports</a>
+<a href="{{ url_for('train_info') }}">Train Info</a>
 </nav>
 <nav class="nav-auth">
 {% if session.get('user_id') %}
@@ -582,10 +781,32 @@ def search():
         <p class="muted">No transport matches this search. Try different cities,
         any transport type, or browse the <a href="/masters/transports">Transports</a> list.</p></div>"""
     selected = {"from": from_city, "to": to_city, "date": travel_date, "type": type_id}
+    # Route info strip (free OSRM + Open-Meteo data). External failures only
+    # hide pieces of the strip -- the results below always still render.
+    strip = ""
+    if from_city and to_city:
+        info = route_info(from_city, to_city)
+        if info:
+            parts = []
+            if "distance" in info:
+                parts.append(f"Road distance: {info['distance']}")
+            if "duration" in info:
+                parts.append(f"Driving time: {info['duration']}")
+            if "weather" in info:
+                parts.append(f"{html.escape(to_city)} ka mausam: {html.escape(info['weather'])}")
+            strip = ('<div class="card route-info"><p><b>Route info:</b> '
+                     + " &middot; ".join(parts) + "</p>"
+                     '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather). '
+                     "Ye sirf jaankari hai — booking ke liye neeche wale transports use karo.</p></div>")
+        else:
+            strip = ('<div class="card route-info"><p class="muted">Route/weather info '
+                     "uplabdh nahi hai (live service se data nahi mila). "
+                     "Search results neeche hain.</p></div>")
     body = f"""<div class="hero"><h1>Search Transports</h1>
     <p>Find a transport for your route and book in a few clicks.</p>
     {search_card(cities, types, selected)}</div>
     <h2>Results</h2>
+    {strip}
     {cards}
     {FOOTER}"""
     return page("Search Transports", body)
@@ -767,8 +988,45 @@ def masters_new(kind):
                      select_field("state_code", "State",
                                   [("", "—")] + [(r["state_code"], r["state_name"]) for r in states]),
     }
+    pin_block = ""
+    if kind == "customers":
+        # PIN lookup helper (not a submitted field: it has no name attribute).
+        # On a 6-digit PIN it calls keyless SearchPinCode and, when the
+        # returned District/State match a city/state option, selects them.
+        # Any failure only shows a note -- the form keeps working by hand.
+        pin_block = """<div><label>PIN code (city/state auto-fill ke liye)<input id="pinLookup" inputmode="numeric" maxlength="6" placeholder="e.g. 226001"></label><p class="muted" id="pinSuggest"></p></div>
+    <script>
+    document.getElementById('pinLookup').addEventListener('input', function () {
+      var pin = this.value.replace(/\\D/g, '').slice(0, 6);
+      this.value = pin;
+      var note = document.getElementById('pinSuggest');
+      if (pin.length !== 6) { note.textContent = ''; return; }
+      note.textContent = 'PIN dhoondha ja raha hai...';
+      fetch('https://searchpincode.in/api/pincode/' + pin)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          // Real shape: [{Status, PostOffice: [{Name, District, State, ...}]}]
+          var list = data;
+          if (data && data.length && data[0].PostOffice) list = data[0].PostOffice;
+          if (!list || !list.length) { note.textContent = 'Is PIN ke liye koi post office nahi mila.'; return; }
+          var po = list[0];
+          note.textContent = 'Suggestion: ' + po.Name + ', ' + po.District + ', ' + po.State + ' — city/state neeche match hone par auto-select ho gaye hain.';
+          var citySel = document.querySelector('select[name=city_code]');
+          var stateSel = document.querySelector('select[name=state_code]');
+          function pick(sel, wanted) {
+            if (!sel) return;
+            for (var i = 0; i < sel.options.length; i++) {
+              if (sel.options[i].text.trim().toLowerCase() === String(wanted).toLowerCase()) { sel.selectedIndex = i; break; }
+            }
+          }
+          pick(citySel, po.District);
+          pick(stateSel, po.State);
+        })
+        .catch(function () { note.textContent = 'PIN lookup uplabdh nahi hai, aap city/state haath se chun sakte hain.'; });
+    });
+    </script>"""
     body = f"""<div class="card"><h2>Add {title}</h2><form method="post">
-    {forms[kind]}<p><button>Save</button></p></form></div>"""
+    {forms[kind]}{pin_block}<p><button>Save</button></p></form></div>"""
     return page(f"Add {title}", body)
 
 
@@ -1029,6 +1287,89 @@ def reports():
         for title, rows, cols in sections
     )
     return page("Reports", body)
+
+
+# ---------------------------------------------------------------------------
+# Train Info (Flask only) - live Indian train data via RapidAPI, server-side
+# ---------------------------------------------------------------------------
+@app.route("/train-info", methods=["GET", "POST"])
+def train_info():
+    key_set = bool(os.environ.get("RAPIDAPI_KEY", ""))
+    result = ""
+    if request.method == "POST":
+        kind = request.form.get("form_kind", "")
+        if not key_set:
+            result = train_setup_card()
+        elif kind == "pnr":
+            pnr = request.form.get("pnr", "").strip()
+            if not re.match(r"^\d{10}$", pnr):
+                result = '<div class="card"><p>PNR 10 digits ka hona chahiye.</p></div>'
+            else:
+                data, err = rapidapi_get(TRAIN_API_ENDPOINTS["pnr"], {"pnr": pnr})
+                result = train_result_html("PNR status", data, err)
+        elif kind == "between":
+            frm = request.form.get("from_station", "").strip().upper()
+            to = request.form.get("to_station", "").strip().upper()
+            travel_date = request.form.get("travel_date", "").strip()
+            if not frm or not to:
+                result = '<div class="card"><p>From aur To station code dono chahiye.</p></div>'
+            else:
+                params = {"from": frm, "to": to}
+                if travel_date:
+                    params["date"] = travel_date
+                data, err = rapidapi_get(TRAIN_API_ENDPOINTS["between"], params)
+                result = train_result_html("Do stations ke beech trains", data, err)
+        elif kind == "live":
+            train_no = request.form.get("train_no", "").strip()
+            travel_date = request.form.get("travel_date", "").strip()
+            if not train_no.isdigit():
+                result = '<div class="card"><p>Train number sirf digits me daalo.</p></div>'
+            else:
+                params = {"train": train_no}
+                if travel_date:
+                    params["date"] = travel_date
+                data, err = rapidapi_get(TRAIN_API_ENDPOINTS["live"], params)
+                result = train_result_html("Live running status", data, err)
+        else:
+            result = '<div class="card"><p>Unknown form.</p></div>'
+    if not key_set:
+        body = train_setup_card()
+    else:
+        body = """<div class="card"><h2>Train Info — Live Train Data</h2>
+        <p class="muted">Live data RapidAPI "Indian Railway API" (free plan) se aata hai.
+        Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye
+        <a href="/booking/new">New Booking</a> use karo.</p></div>
+        <div class="card"><h3>Do stations ke beech trains</h3><form method="post">
+        <input type="hidden" name="form_kind" value="between">
+        <label>From station code<input name="from_station" placeholder="e.g. LKO" required></label>
+        <label>To station code<input name="to_station" placeholder="e.g. NDLS" required></label>
+        <label>Date (optional)<input name="travel_date" type="date"></label>
+        <p><button>Search Trains</button></p></form></div>
+        <div class="card"><h3>Live running status</h3><form method="post">
+        <input type="hidden" name="form_kind" value="live">
+        <label>Train number<input name="train_no" placeholder="e.g. 12429" required></label>
+        <label>Date (optional)<input name="travel_date" type="date"></label>
+        <p><button>Check Live Status</button></p></form></div>
+        <div class="card"><h3>PNR status</h3><form method="post">
+        <input type="hidden" name="form_kind" value="pnr">
+        <label>10-digit PNR<input name="pnr" maxlength="10" placeholder="e.g. 1234567890" required></label>
+        <p><button>Check PNR Status</button></p></form></div>"""
+        if result:
+            body = result + body
+    return page("Train Info", body)
+
+
+def train_result_html(title, data, err):
+    if err == "no-endpoint":
+        return train_endpoint_card()
+    if err:
+        return (f'<div class="card"><h3>{html.escape(title)}</h3>'
+                f'<p class="muted">Live data nahi mila: {html.escape(err)}. '
+                "Thodi der baad dobara try karo.</p></div>")
+    pretty = html.escape(json.dumps(data, indent=2, ensure_ascii=False))
+    return (f'<div class="card"><h3>{html.escape(title)}</h3>'
+            f'<pre style="white-space:pre-wrap;word-break:break-word">{pretty}</pre>'
+            '<p class="muted">Live data: RapidAPI Indian Railway API.</p></div>')
 
 
 if __name__ == "__main__":
