@@ -80,5 +80,9 @@ bash run_mac_linux.sh        # macOS / Linux
 
 Then open http://127.0.0.1:5000 — sign up, log in, manage masters,
 book tickets (fare = seats × the transport's major rate), view reports
-(admin only). The owner email `rishabhsingh4630@gmail.com` becomes admin
-automatically on login (please confirm this is the right owner email).
+(admin only). In the Flask app, admin access is granted by setting the
+ADMIN_EMAIL environment variable before starting the app; no email is
+shown on the site, and no account becomes admin automatically without it.
+In the static demo, admin access is unlocked with an admin code set in
+the demo source (DEMO_ADMIN_CODE); the code itself is never shown on
+the site.

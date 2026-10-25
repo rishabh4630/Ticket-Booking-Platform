@@ -441,7 +441,8 @@ function logOut() {
 }
 function unlockAdmin() {
   if (!session) { flashMsg("Please log in first."); return; }
-  var code = document.getElementById("admin_code").value || "";
+  var input = document.getElementById("admin_code_home") || document.getElementById("admin_code");
+  var code = (input && input.value) || "";
   var acc = accounts.find(function (a) { return a.email === session.email; });
   if (!acc) { flashMsg("Account not found. Please log in again."); return; }
   if (code === DEMO_ADMIN_CODE) {
@@ -767,7 +768,8 @@ function renderHome() {
     "<p class='muted'>Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</p></div>" +
     "<div><h4>About</h4><p class='muted'>TSN Ticket Booking &mdash; a transport ticket booking system, here as a static demo. Demo only: accounts and bookings live only in this browser.</p></div>" +
     "<div><h4>Contact</h4><p><a href='https://github.com/rishabh4630/Ticket-Booking-Platform' target='_blank' rel='noreferrer'>GitHub repository</a></p></div>" +
-    "</div></div>";
+    "</div></div>" +
+    (session && !isAdmin() ? '<div class="card"><details><summary style="cursor:pointer">Admin access</summary><label>Admin code<input id="admin_code_home" type="password"></label><p><button class="secondary" onclick="unlockAdmin()">Unlock admin access</button></p></details></div>' : "");
 }
 
 function masterRows(kind) {
@@ -1073,9 +1075,6 @@ function renderAuth() {
   var note = authTab === "login"
     ? '<p class="muted">Accounts are stored only in this browser with a demo hash, not production security. Do not use a real password here.</p>'
     : '<p class="muted">Your account is stored only in this browser. Use any email and password; nothing leaves this device.</p>';
-  var adminBox = authTab === "login"
-    ? '<details style="margin-top:12px"><summary style="cursor:pointer" class="muted">Admin access</summary><label>Admin code<input id="admin_code" type="password"></label><p><button class="secondary" onclick="unlockAdmin()">Unlock admin access</button></p></details>'
-    : "";
   var switchLink = authTab === "login"
     ? '<p class="muted">No account yet? <a onclick="authTab=\'signup\';renderAuth()" style="cursor:pointer">Sign up</a></p>'
     : '<p class="muted">Already have an account? <a onclick="authTab=\'login\';renderAuth()" style="cursor:pointer">Log in</a></p>';
@@ -1083,7 +1082,7 @@ function renderAuth() {
     '<div class="card" style="max-width:480px;margin:0 auto"><h2>' + title + "</h2>" + tabs + nameField +
     '<label>Email<input id="auth_email" type="email"></label>' +
     '<label>Password<input id="auth_pass" type="password"></label>' +
-    '<p><button onclick="submitAuth()">' + title + "</button></p>" + note + adminBox + switchLink + "</div>";
+    '<p><button onclick="submitAuth()">' + title + "</button></p>" + note + switchLink + "</div>";
 }
 function submitAuth() {
   var email = document.getElementById("auth_email").value;

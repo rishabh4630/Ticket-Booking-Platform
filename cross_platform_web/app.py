@@ -22,8 +22,14 @@ The original demo login (hardcoded) is NOT copied here: this version has
 proper signup/login with hashed passwords (see below).
 """
 
+import html
+import json
 import os
+import re
 import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date
 from functools import wraps
 
@@ -36,11 +42,217 @@ DATABASE = os.path.join(BASE_DIR, "ticket_booking.db")
 app = Flask(__name__)
 app.secret_key = "tsn-ticket-booking-dev-key-change-me"
 
-# The owner account: logging in with this email automatically becomes admin,
-# so there is no separate admin signup/login page.
-# NOTE (same as the Airline project): this email is the GitHub account email
-# on file and must be confirmed/changed if it is not the owner's real email.
-OWNER_EMAIL = "rishabhsingh4630@gmail.com"
+# Admin access: set ADMIN_EMAIL in the environment before starting the app.
+# Logging in with that email becomes admin. If it is not set, no account
+# auto-becomes admin. The address is never shown on any page.
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
+
+
+# ---------------------------------------------------------------------------
+# Free external APIs (keyless; never allowed to break search or booking)
+# OSRM (road distance/driving time), Open-Meteo (destination weather) and
+# SearchPinCode (PIN -> post office/city/state) are all free with no key.
+# Every call has a short timeout and every failure degrades to "info
+# uplabdh nahi" -- the search results and booking flow always still render.
+# ---------------------------------------------------------------------------
+CITY_COORDS = {
+    "Lucknow": (26.8467, 80.9462),
+    "Delhi": (28.6139, 77.2090),
+    "Mumbai": (19.0760, 72.8777),
+    "Bengaluru": (12.9716, 77.5946),
+    "Varanasi": (25.3176, 82.9739),
+"Agra": (27.1767, 78.0081),
+    "Ahmedabad": (23.0225, 72.5714),
+    "Amritsar": (31.634, 74.8723),
+    "Bhopal": (23.2599, 77.4126),
+    "Bhubaneswar": (20.2961, 85.8245),
+    "Chandigarh": (30.7333, 76.7794),
+    "Chennai": (13.0827, 80.2707),
+    "Dehradun": (30.3165, 78.0322),
+    "Gorakhpur": (26.7606, 83.3732),
+    "Guwahati": (26.1445, 91.7362),
+    "Hyderabad": (17.385, 78.4867),
+    "Indore": (22.7196, 75.8577),
+    "Jaipur": (26.9124, 75.7873),
+    "Kanpur": (26.4499, 80.3319),
+    "Kochi": (9.9312, 76.2673),
+    "Kolkata": (22.5726, 88.3639),
+    "Madurai": (9.9252, 78.1198),
+    "Nagpur": (21.1458, 79.0882),
+    "Panaji": (15.4909, 74.8273),
+    "Patna": (25.5941, 85.1376),
+    "Prayagraj": (25.4358, 81.8463),
+    "Pune": (18.5204, 73.8567),
+    "Surat": (21.1702, 72.8311),
+}
+
+
+def _fetch_json(url, timeout=5, headers=None):
+    """GET a JSON URL, or None on any failure (timeout, HTTP error, bad JSON)."""
+    req = urllib.request.Request(url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except Exception:
+        return None
+
+
+def weather_label(code):
+    """WMO weather code -> short Hinglish-friendly label."""
+    if code is None:
+        return "mausam uplabdh nahi"
+    code = int(code)
+    if code == 0:
+        return "Saaf aasmaan"
+    if code == 1:
+        return "Zyaada tar saaf"
+    if code == 2:
+        return "Halke baadal"
+    if code == 3:
+        return "Baadal"
+    if code in (45, 48):
+        return "Kohra"
+    if code in (51, 53, 55, 56, 57):
+        return "Halki boondabaandi"
+    if code in (61, 80):
+        return "Halki baarish"
+    if code in (63, 81):
+        return "Baarish"
+    if code in (65, 82, 66, 67):
+        return "Tez baarish"
+    if code in (71, 73, 75, 77, 85, 86):
+        return "Barf"
+    if code in (95, 96, 99):
+        return "Aandhi-toofan"
+    return "mausam uplabdh nahi"
+
+
+def fmt_distance(metres):
+    if metres < 10000:
+        return f"{metres / 1000:.1f} km"
+    return f"{round(metres / 1000)} km"
+
+
+def fmt_duration(seconds):
+    hours = int(seconds // 3600)
+    minutes = int(round((seconds % 3600) / 60))
+    if minutes == 60:
+        hours += 1
+        minutes = 0
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def resolve_coords(city):
+    """(lat, lon) for a city: seed table first, else keyless Nominatim."""
+    if city in CITY_COORDS:
+        return CITY_COORDS[city]
+    data = _fetch_json(
+        "https://nominatim.openstreetmap.org/search?format=json&limit=1&q="
+        + urllib.parse.quote(city + ", India"),
+        headers={"User-Agent": "TSN-Ticket-Booking/1.0 (student demo)"},
+    )
+    if data and isinstance(data, list) and data:
+        try:
+            return (float(data[0]["lat"]), float(data[0]["lon"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+    return None
+
+
+def route_info(from_city, to_city):
+    """Road distance + driving time + destination weather. Never raises;
+    returns a dict that may be partial or empty when a service fails."""
+    info = {}
+    try:
+        start = resolve_coords(from_city)
+        dest = resolve_coords(to_city)
+        if start and dest:
+            data = _fetch_json(
+                "https://router.project-osrm.org/route/v1/driving/"
+                f"{start[1]},{start[0]};{dest[1]},{dest[0]}?overview=false"
+            )
+            routes = (data or {}).get("routes") or []
+            if routes:
+                info["distance"] = fmt_distance(routes[0]["distance"])
+                info["duration"] = fmt_duration(routes[0]["duration"])
+        if dest:
+            data = _fetch_json(
+                "https://api.open-meteo.com/v1/forecast"
+                f"?latitude={dest[0]}&longitude={dest[1]}"
+                "&current=temperature_2m,weather_code&timezone=Asia%2FKolkata"
+            )
+            current = (data or {}).get("current") or {}
+            if "temperature_2m" in current:
+                info["weather"] = (
+                    f"{current['temperature_2m']}°C, "
+                    f"{weather_label(current.get('weather_code'))}"
+                )
+    except Exception:
+        pass
+    return info
+
+
+# ---------------------------------------------------------------------------
+# Train live data (Flask only, via RapidAPI "Indian Railway API")
+# Endpoint paths VERIFIED from the official Endpoints documentation
+# (screenshots sent by the user, 2026-10-25). Base host is the RapidAPI
+# standard pattern from the listing slug. The key is read only from the
+# environment and is never sent to the browser or the static demo.
+# ---------------------------------------------------------------------------
+RAPIDAPI_HOST = os.environ.get("RAPIDAPI_HOST", "indian-railway-api1.p.rapidapi.com")
+TRAIN_API = {
+    "between": "/api/v1/trains/between",            # ?from=NDLS&to=PNBE
+    "status": "/api/v1/trains/{train_no}/status",   # ?start_date=YYYY-MM-DD
+    "pnr": "/api/v1/pnr/{pnr}",                     # exact 10-digit PNR
+    "search": "/api/v1/trains/search",              # ?query=train name/number
+    "schedule": "/api/v1/trains/{train_no}/schedule",
+    "live_board": "/api/v1/stations/{station_code}/live",
+}
+
+
+def rapidapi_get(path, params):
+    """Call RapidAPI server-side. Returns (data, error); error is one of
+    'no-key', 'auth', 'rate', or a short failure message. Never raises."""
+    key = os.environ.get("RAPIDAPI_KEY", "")
+    if not key:
+        return None, "no-key"
+    url = "https://" + RAPIDAPI_HOST + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(
+        url, headers={"X-RapidAPI-Key": key, "X-RapidAPI-Host": RAPIDAPI_HOST}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace")), None
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            return None, "auth"
+        if exc.code == 429:
+            return None, "rate"
+        return None, "HTTP %s" % exc.code
+    except Exception:
+        return None, "network"
+
+
+def train_setup_card():
+    return """<div class="ti-photo-hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
+    <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
+    <div class="card"><h2>Setup chahiye</h2>
+    <p>Live train data (do stations ke beech trains, live running status, PNR status)
+    ke liye <b>free RapidAPI key</b> chahiye. Key ke bina ye page error nahi dega —
+    bas setup steps dikhayega.</p>
+    <ol>
+    <li><b>RapidAPI par free account banao</b> (rapidapi.com).</li>
+    <li><b>Indian Railway API</b> listing kholo aur <b>free BASIC plan</b> subscribe karo.</li>
+    <li>Apni key copy karo aur server start karne se <b>pehle</b> environment variable me daalo:
+    Mac/Linux par <code>export RAPIDAPI_KEY=apki-key</code>, Windows par <code>set RAPIDAPI_KEY=apki-key</code>.</li>
+    <li>Server restart karo — phir ye page live train data dikhayega.</li>
+    </ol>
+    <p class="muted">Key kabhi code me, GitHub par ya static demo me mat daalo — sirf server
+    ke environment me rakho. RapidAPI key ke bina koi live train call nahi bheji jaati.</p></div>"""
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +429,151 @@ def init_db():
             "INSERT INTO cust_det (cust_code, cust_name, age, sex) VALUES (?,?,?,?)",
             [(1, "Rahul Sharma", 30, "Male"), (2, "Priya Verma", 27, "Female")],
         )
+    # All-India expansion (2026-10-25, demo data only, not real schedules
+    # or fares). Append-only sync: INSERT OR IGNORE adds these rows to
+    # existing local DBs on next run without touching the old seed rows.
+    # Route rows are one per corridor (both directions share the corridor
+    # row, like the existing 'Lucknow-Delhi' naming); transports are
+    # directed both ways because search matches transports by exact
+    # st_pos/dest. Home shows only the first 9 routes (see home()).
+    db.executemany("INSERT OR IGNORE INTO states VALUES (?,?)",
+        [(5, 'Rajasthan'), (6, 'Gujarat'), (7, 'Madhya Pradesh'), (8, 'Bihar'), (9, 'West Bengal'), (10, 'Odisha'), (11, 'Assam'), (12, 'Telangana'), (13, 'Tamil Nadu'), (14, 'Kerala'), (15, 'Punjab'), (16, 'Uttarakhand'), (17, 'Goa'), (18, 'Chandigarh')])
+    db.executemany("INSERT OR IGNORE INTO cities VALUES (?,?)",
+        [(6, 'Jaipur'), (7, 'Agra'), (8, 'Kanpur'), (9, 'Chandigarh'), (10, 'Amritsar'), (11, 'Dehradun'), (12, 'Gorakhpur'), (13, 'Prayagraj'), (14, 'Patna'), (15, 'Kolkata'), (16, 'Bhubaneswar'), (17, 'Guwahati'), (18, 'Ahmedabad'), (19, 'Surat'), (20, 'Pune'), (21, 'Nagpur'), (22, 'Bhopal'), (23, 'Indore'), (24, 'Hyderabad'), (25, 'Chennai'), (26, 'Kochi'), (27, 'Madurai'), (28, 'Panaji')])
+    db.executemany("INSERT OR IGNORE INTO routes VALUES (?,?,?,?)",
+        [(4, 'Delhi-Jaipur', 'Delhi', 'Jaipur'),
+         (5, 'Mumbai-Pune', 'Mumbai', 'Pune'),
+         (6, 'Bengaluru-Chennai', 'Bengaluru', 'Chennai'),
+         (7, 'Delhi-Kolkata', 'Delhi', 'Kolkata'),
+         (8, 'Lucknow-Varanasi', 'Lucknow', 'Varanasi'),
+         (9, 'Mumbai-Bengaluru', 'Mumbai', 'Bengaluru'),
+         (10, 'Delhi-Agra', 'Delhi', 'Agra'),
+         (11, 'Delhi-Kanpur', 'Delhi', 'Kanpur'),
+         (12, 'Delhi-Chandigarh', 'Delhi', 'Chandigarh'),
+         (13, 'Delhi-Amritsar', 'Delhi', 'Amritsar'),
+         (14, 'Delhi-Dehradun', 'Delhi', 'Dehradun'),
+         (15, 'Delhi-Varanasi', 'Delhi', 'Varanasi'),
+         (16, 'Delhi-Bhopal', 'Delhi', 'Bhopal'),
+         (17, 'Delhi-Indore', 'Delhi', 'Indore'),
+         (18, 'Delhi-Patna', 'Delhi', 'Patna'),
+         (19, 'Delhi-Ahmedabad', 'Delhi', 'Ahmedabad'),
+         (20, 'Delhi-Nagpur', 'Delhi', 'Nagpur'),
+         (21, 'Delhi-Hyderabad', 'Delhi', 'Hyderabad'),
+         (22, 'Delhi-Chennai', 'Delhi', 'Chennai'),
+         (23, 'Lucknow-Kanpur', 'Lucknow', 'Kanpur'),
+         (24, 'Lucknow-Gorakhpur', 'Lucknow', 'Gorakhpur'),
+         (25, 'Lucknow-Prayagraj', 'Lucknow', 'Prayagraj'),
+         (26, 'Lucknow-Agra', 'Lucknow', 'Agra'),
+         (27, 'Lucknow-Kolkata', 'Lucknow', 'Kolkata'),
+         (28, 'Lucknow-Patna', 'Lucknow', 'Patna'),
+         (29, 'Mumbai-Ahmedabad', 'Mumbai', 'Ahmedabad'),
+         (30, 'Mumbai-Surat', 'Mumbai', 'Surat'),
+         (31, 'Mumbai-Nagpur', 'Mumbai', 'Nagpur'),
+         (32, 'Mumbai-Hyderabad', 'Mumbai', 'Hyderabad'),
+         (33, 'Mumbai-Panaji', 'Mumbai', 'Panaji'),
+         (34, 'Bengaluru-Hyderabad', 'Bengaluru', 'Hyderabad'),
+         (35, 'Bengaluru-Kochi', 'Bengaluru', 'Kochi'),
+         (36, 'Bengaluru-Madurai', 'Bengaluru', 'Madurai'),
+         (37, 'Chennai-Hyderabad', 'Chennai', 'Hyderabad'),
+         (38, 'Chennai-Madurai', 'Chennai', 'Madurai'),
+         (39, 'Chennai-Kochi', 'Chennai', 'Kochi'),
+         (40, 'Kolkata-Patna', 'Kolkata', 'Patna'),
+         (41, 'Kolkata-Bhubaneswar', 'Kolkata', 'Bhubaneswar'),
+         (42, 'Kolkata-Guwahati', 'Kolkata', 'Guwahati')])
+    db.executemany("INSERT OR IGNORE INTO transports VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(5, 'TSN Aravalli', 45, 200, 300, 'per seat', 'Delhi', 'Jaipur', '06:00', '11:00', 1, 4),
+         (6, 'TSN Aravalli', 45, 200, 300, 'per seat', 'Jaipur', 'Delhi', '16:00', '21:00', 1, 4),
+         (7, 'TSN Aravalli Mail', 110, 250, 350, 'per seat', 'Delhi', 'Jaipur', '07:30', '12:00', 3, 4),
+         (8, 'TSN Aravalli Mail', 110, 250, 350, 'per seat', 'Jaipur', 'Delhi', '17:00', '21:30', 3, 4),
+         (9, 'TSN Sahyadri', 45, 150, 200, 'per seat', 'Mumbai', 'Pune', '07:00', '10:30', 1, 5),
+         (10, 'TSN Sahyadri', 45, 150, 200, 'per seat', 'Pune', 'Mumbai', '17:00', '20:30', 1, 5),
+         (11, 'TSN Sahyadri Mail', 110, 180, 250, 'per seat', 'Mumbai', 'Pune', '08:00', '11:30', 3, 5),
+         (12, 'TSN Sahyadri Mail', 110, 180, 250, 'per seat', 'Pune', 'Mumbai', '18:00', '21:30', 3, 5),
+         (13, 'TSN Kaveri', 45, 250, 350, 'per seat', 'Bengaluru', 'Chennai', '07:00', '12:30', 1, 6),
+         (14, 'TSN Kaveri', 45, 250, 350, 'per seat', 'Chennai', 'Bengaluru', '16:00', '21:30', 1, 6),
+         (15, 'TSN Kaveri Mail', 110, 280, 400, 'per seat', 'Bengaluru', 'Chennai', '08:00', '13:00', 3, 6),
+         (16, 'TSN Kaveri Mail', 110, 280, 400, 'per seat', 'Chennai', 'Bengaluru', '17:00', '22:00', 3, 6),
+         (17, 'TSN Hooghly', 120, 800, 1150, 'per seat', 'Delhi', 'Kolkata', '17:00', '11:30', 3, 7),
+         (18, 'TSN Hooghly', 120, 800, 1150, 'per seat', 'Kolkata', 'Delhi', '18:00', '12:30', 3, 7),
+         (19, 'TSN Awadh', 45, 250, 350, 'per seat', 'Lucknow', 'Varanasi', '07:00', '12:00', 1, 8),
+         (20, 'TSN Awadh', 45, 250, 350, 'per seat', 'Varanasi', 'Lucknow', '15:00', '20:00', 1, 8),
+         (21, 'TSN Tungabhadra', 120, 650, 950, 'per seat', 'Mumbai', 'Bengaluru', '19:00', '10:00', 3, 9),
+         (22, 'TSN Tungabhadra', 120, 650, 950, 'per seat', 'Bengaluru', 'Mumbai', '20:00', '11:00', 3, 9),
+         (23, 'TSN Braj', 45, 180, 250, 'per seat', 'Delhi', 'Agra', '07:00', '11:00', 1, 10),
+         (24, 'TSN Braj', 45, 180, 250, 'per seat', 'Agra', 'Delhi', '15:00', '19:00', 1, 10),
+         (25, 'TSN Ganga', 50, 320, 450, 'per seat', 'Delhi', 'Kanpur', '20:00', '06:00', 2, 11),
+         (26, 'TSN Ganga', 50, 320, 450, 'per seat', 'Kanpur', 'Delhi', '20:30', '06:30', 2, 11),
+         (27, 'TSN Shivalik', 45, 200, 300, 'per seat', 'Delhi', 'Chandigarh', '07:00', '11:30', 1, 12),
+         (28, 'TSN Shivalik', 45, 200, 300, 'per seat', 'Chandigarh', 'Delhi', '16:00', '20:30', 1, 12),
+         (29, 'TSN Amrit', 120, 380, 550, 'per seat', 'Delhi', 'Amritsar', '08:00', '14:30', 3, 13),
+         (30, 'TSN Amrit', 120, 380, 550, 'per seat', 'Amritsar', 'Delhi', '15:00', '21:30', 3, 13),
+         (31, 'TSN Doon', 45, 200, 300, 'per seat', 'Delhi', 'Dehradun', '06:30', '12:00', 1, 14),
+         (32, 'TSN Doon', 45, 200, 300, 'per seat', 'Dehradun', 'Delhi', '15:30', '21:00', 1, 14),
+         (33, 'TSN Kashi', 120, 550, 800, 'per seat', 'Delhi', 'Varanasi', '18:00', '08:00', 3, 15),
+         (34, 'TSN Kashi', 120, 550, 800, 'per seat', 'Varanasi', 'Delhi', '19:00', '09:00', 3, 15),
+         (35, 'TSN Vindhya', 110, 520, 750, 'per seat', 'Delhi', 'Bhopal', '21:00', '07:00', 3, 16),
+         (36, 'TSN Vindhya', 110, 520, 750, 'per seat', 'Bhopal', 'Delhi', '21:30', '07:30', 3, 16),
+         (37, 'TSN Malwa', 110, 550, 800, 'per seat', 'Delhi', 'Indore', '20:00', '08:30', 3, 17),
+         (38, 'TSN Malwa', 110, 550, 800, 'per seat', 'Indore', 'Delhi', '20:30', '09:00', 3, 17),
+         (39, 'TSN Saryu', 120, 650, 950, 'per seat', 'Delhi', 'Patna', '17:00', '10:00', 3, 18),
+         (40, 'TSN Saryu', 120, 650, 950, 'per seat', 'Patna', 'Delhi', '18:00', '11:00', 3, 18),
+         (41, 'TSN Sabarmati', 120, 620, 900, 'per seat', 'Delhi', 'Ahmedabad', '19:00', '09:30', 3, 19),
+         (42, 'TSN Sabarmati', 120, 620, 900, 'per seat', 'Ahmedabad', 'Delhi', '19:30', '10:00', 3, 19),
+         (43, 'TSN Vidarbha', 110, 700, 1000, 'per seat', 'Delhi', 'Nagpur', '18:30', '10:30', 3, 20),
+         (44, 'TSN Vidarbha', 110, 700, 1000, 'per seat', 'Nagpur', 'Delhi', '19:00', '11:00', 3, 20),
+         (45, 'TSN Deccan', 120, 850, 1200, 'per seat', 'Delhi', 'Hyderabad', '16:00', '12:00', 3, 21),
+         (46, 'TSN Deccan', 120, 850, 1200, 'per seat', 'Hyderabad', 'Delhi', '17:00', '13:00', 3, 21),
+         (47, 'TSN Coromandel', 120, 1000, 1400, 'per seat', 'Delhi', 'Chennai', '15:00', '13:00', 3, 22),
+         (48, 'TSN Coromandel', 120, 1000, 1400, 'per seat', 'Chennai', 'Delhi', '16:00', '14:00', 3, 22),
+         (49, 'TSN Gomti', 50, 100, 150, 'per seat', 'Lucknow', 'Kanpur', '08:00', '10:00', 2, 23),
+         (50, 'TSN Gomti', 50, 100, 150, 'per seat', 'Kanpur', 'Lucknow', '17:00', '19:00', 2, 23),
+         (51, 'TSN Terai', 45, 200, 300, 'per seat', 'Lucknow', 'Gorakhpur', '07:30', '12:00', 1, 24),
+         (52, 'TSN Terai', 45, 200, 300, 'per seat', 'Gorakhpur', 'Lucknow', '15:30', '20:00', 1, 24),
+         (53, 'TSN Sangam', 50, 150, 200, 'per seat', 'Lucknow', 'Prayagraj', '08:00', '11:30', 2, 25),
+         (54, 'TSN Sangam', 50, 150, 200, 'per seat', 'Prayagraj', 'Lucknow', '16:00', '19:30', 2, 25),
+         (55, 'TSN Chambal', 45, 250, 350, 'per seat', 'Lucknow', 'Agra', '07:00', '12:30', 1, 26),
+         (56, 'TSN Chambal', 45, 250, 350, 'per seat', 'Agra', 'Lucknow', '15:00', '20:30', 1, 26),
+         (57, 'TSN Purvanchal', 120, 650, 950, 'per seat', 'Lucknow', 'Kolkata', '18:00', '10:00', 3, 27),
+         (58, 'TSN Purvanchal', 120, 650, 950, 'per seat', 'Kolkata', 'Lucknow', '19:00', '11:00', 3, 27),
+         (59, 'TSN Sone', 110, 420, 600, 'per seat', 'Lucknow', 'Patna', '20:00', '06:00', 3, 28),
+         (60, 'TSN Sone', 110, 420, 600, 'per seat', 'Patna', 'Lucknow', '21:00', '07:00', 3, 28),
+         (61, 'TSN Tapti', 50, 380, 550, 'per seat', 'Mumbai', 'Ahmedabad', '07:00', '14:00', 1, 29),
+         (62, 'TSN Tapti', 50, 380, 550, 'per seat', 'Ahmedabad', 'Mumbai', '15:00', '22:00', 1, 29),
+         (63, 'TSN Narmada', 45, 200, 300, 'per seat', 'Mumbai', 'Surat', '07:30', '12:30', 1, 30),
+         (64, 'TSN Narmada', 45, 200, 300, 'per seat', 'Surat', 'Mumbai', '16:00', '21:00', 1, 30),
+         (65, 'TSN Wardha', 110, 550, 800, 'per seat', 'Mumbai', 'Nagpur', '20:00', '08:00', 3, 31),
+         (66, 'TSN Wardha', 110, 550, 800, 'per seat', 'Nagpur', 'Mumbai', '20:30', '08:30', 3, 31),
+         (67, 'TSN Krishna', 110, 520, 750, 'per seat', 'Mumbai', 'Hyderabad', '21:00', '07:30', 3, 32),
+         (68, 'TSN Krishna', 110, 520, 750, 'per seat', 'Hyderabad', 'Mumbai', '21:30', '08:00', 3, 32),
+         (69, 'TSN Konkan', 45, 420, 600, 'per seat', 'Mumbai', 'Panaji', '07:00', '17:00', 1, 33),
+         (70, 'TSN Konkan', 45, 420, 600, 'per seat', 'Panaji', 'Mumbai', '08:00', '18:00', 1, 33),
+         (71, 'TSN Godavari', 110, 420, 600, 'per seat', 'Bengaluru', 'Hyderabad', '21:00', '07:00', 3, 34),
+         (72, 'TSN Godavari', 110, 420, 600, 'per seat', 'Hyderabad', 'Bengaluru', '21:30', '07:30', 3, 34),
+         (73, 'TSN Malabar', 45, 380, 550, 'per seat', 'Bengaluru', 'Kochi', '07:30', '17:30', 1, 35),
+         (74, 'TSN Malabar', 45, 380, 550, 'per seat', 'Kochi', 'Bengaluru', '08:00', '18:00', 1, 35),
+         (75, 'TSN Pandya', 50, 320, 450, 'per seat', 'Bengaluru', 'Madurai', '20:00', '05:00', 2, 36),
+         (76, 'TSN Pandya', 50, 320, 450, 'per seat', 'Madurai', 'Bengaluru', '21:00', '06:00', 2, 36),
+         (77, 'TSN Pennar', 110, 450, 650, 'per seat', 'Chennai', 'Hyderabad', '20:00', '07:00', 3, 37),
+         (78, 'TSN Pennar', 110, 450, 650, 'per seat', 'Hyderabad', 'Chennai', '21:00', '08:00', 3, 37),
+         (79, 'TSN Vaigai', 45, 320, 450, 'per seat', 'Chennai', 'Madurai', '07:00', '13:30', 1, 38),
+         (80, 'TSN Vaigai', 45, 320, 450, 'per seat', 'Madurai', 'Chennai', '15:00', '21:30', 1, 38),
+         (81, 'TSN Nilgiri', 110, 480, 700, 'per seat', 'Chennai', 'Kochi', '19:30', '07:00', 3, 39),
+         (82, 'TSN Nilgiri', 110, 480, 700, 'per seat', 'Kochi', 'Chennai', '20:00', '07:30', 3, 39),
+         (83, 'TSN Koshi', 110, 420, 600, 'per seat', 'Kolkata', 'Patna', '19:00', '06:00', 3, 40),
+         (84, 'TSN Koshi', 110, 420, 600, 'per seat', 'Patna', 'Kolkata', '20:00', '07:00', 3, 40),
+         (85, 'TSN Kalinga', 110, 350, 500, 'per seat', 'Kolkata', 'Bhubaneswar', '08:00', '14:30', 3, 41),
+         (86, 'TSN Kalinga', 110, 350, 500, 'per seat', 'Bhubaneswar', 'Kolkata', '15:00', '21:30', 3, 41),
+         (87, 'TSN Brahmaputra', 120, 650, 950, 'per seat', 'Kolkata', 'Guwahati', '17:30', '11:00', 3, 42),
+         (88, 'TSN Brahmaputra', 120, 650, 950, 'per seat', 'Guwahati', 'Kolkata', '18:30', '12:00', 3, 42),
+         (89, 'TSN Express', 40, 300, 500, 'per seat', 'Delhi', 'Lucknow', '06:00', '12:00', 1, 1),
+         (90, 'TSN Mail', 120, 600, 950, 'per seat', 'Bengaluru', 'Lucknow', '09:00', '21:00', 3, 3),
+         (91, 'TSN Deluxe', 50, 400, 750, 'per seat', 'Mumbai', 'Delhi', '08:00', '20:00', 1, 2)])
+    # route_det has no unique key, so guard via rows with NOT EXISTS
+    # to keep re-runs from duplicating them.
+    db.executemany(
+        "INSERT INTO route_det (rid, via) SELECT ?, ? WHERE NOT EXISTS "
+        "(SELECT 1 FROM route_det WHERE rid = ? AND via = ?)",
+        [(4, 'Alwar', 4, 'Alwar'), (5, 'Lonavala', 5, 'Lonavala'), (6, 'Vellore', 6, 'Vellore'), (10, 'Mathura', 10, 'Mathura'), (12, 'Ambala', 12, 'Ambala'), (23, 'Unnao', 23, 'Unnao')])
     db.commit()
     db.close()
 
@@ -276,10 +633,10 @@ header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:10}
 .topbar a{color:#fff;text-decoration:none;font-weight:600}
 .topbar a.cta{background:var(--blue);padding:7px 14px;border-radius:999px}
 .brand{font-size:1.15rem;margin-right:auto}
-.brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}
+.brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}.nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.nav-links a{font-weight:700;font-size:.95rem;letter-spacing:.2px;padding:8px 12px;border-radius:10px}.nav-links a:hover{background:rgba(255,255,255,.16)}.nav-auth{display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap;padding-left:14px;border-left:1px solid rgba(255,255,255,.25)}.nav-auth a{font-weight:600;padding:8px 10px;border-radius:10px}.nav-auth a:hover{background:rgba(255,255,255,.16)}.topbar a.brand{font-weight:800}@media (max-width:600px){.nav-auth{margin-left:0;padding-left:0;border-left:0}}
 main{max-width:1100px;margin:0 auto;padding:22px 20px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
-.hero{background:linear-gradient(120deg,var(--navy),var(--blue));color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
+.hero{background:linear-gradient(120deg,var(--navy),var(--blue) 55%,#5db2f0);color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
 .hero h1{margin:0 0 6px}
 .hero p{margin:0;color:#dbeeff}
 table{width:100%;border-collapse:collapse}
@@ -294,20 +651,124 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
 .stat b{font-size:1.8rem;color:var(--navy)}
 @media (max-width:600px){main{padding-left:14px;padding-right:14px}}
+.search-card{background:#fff;border-radius:16px;padding:18px;box-shadow:var(--shadow);margin-top:20px;color:var(--ink)}
+.search-card label{margin:0}
+.search-grid{display:grid;grid-template-columns:1.2fr 1.2fr 1fr 1fr auto;gap:12px;align-items:end}
+.search-card .btn{height:44px;white-space:nowrap}
+.trust{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:18px}
+.trust .card{margin-bottom:0}
+.route-card h3{margin:0 0 4px}
+.route-card .fare{font-size:1.4rem;font-weight:700;color:var(--navy);margin:8px 0}
+.footer{border-top:1px solid var(--line);background:#fff;border-radius:16px;margin-top:8px}
+.footer-inner{padding:24px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+.footer h4{margin:0 0 8px;color:var(--navy)}
+.footer a{color:var(--blue);text-decoration:none}
+@media (max-width:700px){.search-grid{grid-template-columns:1fr 1fr}}
+.route-info{border-left:4px solid var(--blue)}
+.route-info p{margin:4px 0 0}
+/* --- Premium polish: rhythm, depth, focus, motion, dark mode (overrides above) --- */
+:root{--blue-dark:#0668b3;--accent:#4aa8ec;--shadow:0 12px 32px rgba(6,59,120,.12);--shadow-lg:0 20px 44px rgba(6,59,120,.16);--shadow-hover:0 18px 38px rgba(6,59,120,.18);--focus:0 0 0 3px rgba(8,120,209,.30);--ease:180ms ease}
+main{padding:28px 20px}
+h2{letter-spacing:-.01em;line-height:1.25}
+main>h2{margin:26px 0 14px}
+.card{padding:22px;margin-bottom:20px;transition:transform var(--ease),box-shadow var(--ease);animation:rise .5s ease both}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-hover)}
+.hero{background:linear-gradient(125deg,#04294f 0%,var(--navy) 32%,var(--blue) 64%,#63b6f2 100%);padding:34px 32px;margin-bottom:26px;box-shadow:var(--shadow-lg);animation:rise .5s ease both}
+.hero h1{font-size:clamp(1.7rem,3vw,2.3rem);font-weight:800;letter-spacing:-.02em;line-height:1.15;margin:0 0 8px}
+.hero p{font-size:1.05rem;line-height:1.55}
+.eyebrow{font-size:.78rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);margin:0 0 6px}
+.hero .eyebrow{color:#bfe3ff;margin-bottom:10px}
+button,.btn{padding:11px 20px;box-shadow:0 6px 16px rgba(8,120,209,.25);transition:transform var(--ease),box-shadow var(--ease),background var(--ease)}
+button:hover,.btn:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(8,120,209,.30);background:var(--blue-dark)}
+button:active,.btn:active{transform:scale(.98);box-shadow:0 4px 10px rgba(8,120,209,.25)}
+button.secondary:hover,.btn.secondary:hover{background:var(--light);box-shadow:0 8px 18px rgba(6,59,120,.14)}
+.topbar a.cta{transition:transform var(--ease),background var(--ease),box-shadow var(--ease)}
+.topbar a.cta:hover{background:var(--blue-dark);transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.25)}
+.nav-links a,.nav-auth a{transition:background var(--ease),box-shadow var(--ease)}
+.nav-links a:hover,.nav-auth a:hover{background:rgba(255,255,255,.18)}
+.nav-links a.active,.nav-auth a.active{background:rgba(255,255,255,.22);box-shadow:inset 0 0 0 1px rgba(255,255,255,.28)}
+input,select,textarea{padding:11px 13px;transition:border-color var(--ease),box-shadow var(--ease)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);box-shadow:var(--focus)}
+button:focus-visible,.btn:focus-visible,a:focus-visible{outline:none;box-shadow:var(--focus)}
+.topbar a:focus-visible{box-shadow:0 0 0 3px rgba(255,255,255,.5)}
+.trust{gap:18px;margin-bottom:20px}
+.grid{gap:18px}
+.search-card{padding:22px;box-shadow:var(--shadow-lg)}
+.search-card .btn{height:46px}
+.footer{margin-top:12px}
+.footer-inner{padding:28px 24px;gap:22px}
+.route-card .fare{margin:10px 0}
+th,td{padding:10px 12px}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media (prefers-color-scheme:dark){
+:root{--bg:#0a1727;--surface:#12273f;--ink:#e9f2fb;--muted:#9db6cf;--line:#24405f;--light:#173452;--shadow:0 12px 32px rgba(0,0,0,.5);--shadow-lg:0 20px 44px rgba(0,0,0,.55);--shadow-hover:0 18px 38px rgba(0,0,0,.6);--focus:0 0 0 3px rgba(74,168,236,.45)}
+header{background:#041f3d}
+.hero{background:linear-gradient(125deg,#021a33 0%,#063B78 40%,#0a6cb8 75%,#2f8fd4 100%)}
+.stat b,.route-card .fare,.footer h4{color:#8ec9f5}
+.search-card,.footer{background:var(--surface)}
+button.secondary,.btn.secondary{background:var(--surface);color:#dbeeff}
+input,select,textarea{background:#0d1f36;color:var(--ink)}
+.tabs button{background:var(--surface);color:#dbeeff}
+.pill{background:var(--light);color:#bfe0fa}
+.flash,.demo-note{background:#3a2e08;border-color:#6b5a1d;color:#ffe9a8}
+button:hover,.btn:hover{box-shadow:0 10px 22px rgba(0,0,0,.5)}
+button.secondary:hover,.btn.secondary:hover{background:var(--light)}
+}
+/* --- Premium video background (Airline pattern): fixed video + brand-blue overlay, content stays above --- */
+html{background:var(--bg)}
+body{background:transparent}
+.video-bg{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;pointer-events:none}
+.video-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(120deg,rgba(4,41,79,.68) 0%,rgba(6,59,120,.48) 45%,rgba(8,120,209,.30) 100%)}
+.card,.search-card,.footer{background:color-mix(in srgb,var(--surface) 94%,transparent)}
+@media (prefers-color-scheme:dark){.video-bg{opacity:.45}.video-overlay{background:linear-gradient(120deg,rgba(2,15,30,.72) 0%,rgba(4,31,61,.55) 45%,rgba(6,59,120,.30) 100%)}}
+@media (prefers-reduced-motion:reduce){.video-bg,.video-overlay{display:none}}
+main>h2{text-shadow:0 1px 10px rgba(0,0,0,.30)}
+.ti-photo-hero{border-radius:20px;padding:30px 28px;margin-bottom:22px;color:#fff;box-shadow:0 12px 30px rgba(4,41,79,.25);background:linear-gradient(100deg,rgba(2,20,40,.82) 0%,rgba(4,41,79,.55) 55%,rgba(4,41,79,.15) 100%),url("https://images.pexels.com/photos/34760274/pexels-photo-34760274/free-photo-of-scenic-train-journey-through-swiss-canyon-in-fall.jpeg?auto=compress&cs=tinysrgb&w=1600") center/cover}
+.ti-photo-hero h1{color:#fff;margin:0 0 8px}
+.ti-photo-hero p{color:#dbeeff;margin:0}
+.ti-photo-hero .eyebrow{color:#bfe3ff;margin-bottom:10px}
+header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);box-shadow:0 8px 24px rgba(4,41,79,.35);border-bottom:1px solid rgba(255,255,255,.15)}
+.topbar{padding:14px 20px}
+.nav-auth{background:rgba(255,255,255,.10);border-left:0;border-radius:999px;padding:6px 10px 6px 16px}
+@media (prefers-color-scheme:dark){header{background:linear-gradient(100deg,#021a33 0%,#063B78 55%,#0a6cb8 100%);box-shadow:0 8px 24px rgba(0,0,0,.55)}}
+.topbar{row-gap:0}
+.nav-links{order:3;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
+.nav-auth{order:2;margin-left:auto}
+.route-card{cursor:pointer}
+@media print{header,.noprint{display:none}}
+@media (max-width:600px){
+.topbar{padding:10px 14px}
+.nav-links a{padding:7px 9px;font-size:.9rem}
+.nav-auth a{padding:7px 9px}
+.card{padding:16px}
+table{display:block;max-width:100%;overflow-x:auto}
+}
+@media (max-width:520px){
+.search-grid{grid-template-columns:1fr}
+.grid{grid-template-columns:1fr}
+}
 </style></head><body>
+<video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4" media="(min-width:601px)"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
+<div class="video-overlay" aria-hidden="true"></div>
 <header><div class="topbar">
 <a class="brand" href="{{ url_for('home') }}">TSN Ticket Booking<span>Transport Service Network - Web Version</span></a>
+<nav class="nav-links">
 <a href="{{ url_for('home') }}">Home</a>
 <a href="{{ url_for('masters_index') }}">Masters</a>
-<a href="{{ url_for('new_booking') }}">New Booking</a>
+<a class="cta" href="{{ url_for('new_booking') }}">New Booking</a>
 <a href="{{ url_for('bookings') }}">Bookings</a>
 <a href="{{ url_for('reports') }}">Reports</a>
+<a href="{{ url_for('train_info') }}">Train Info</a>
+</nav>
+<nav class="nav-auth">
 {% if session.get('user_id') %}
 <a href="{{ url_for('logout') }}">Logout ({{ session.get('user_name','') }})</a>
 {% else %}
 <a href="{{ url_for('login') }}">Login</a>
-<a href="{{ url_for('register') }}">Sign Up</a>
+<a href="{{ url_for('register') }}">Register</a>
 {% endif %}
+</nav>
 </div></header>
 <main>
 {% with messages = get_flashed_messages() %}
@@ -386,8 +847,8 @@ def login():
             "SELECT * FROM users WHERE email=?", (f["email"].strip(),)
         ).fetchone()
         if user and check_password_hash(user["password_hash"], f["password"]):
-            # Owner email auto-upgrades to admin on login (same as Airline).
-            if user["email"] == OWNER_EMAIL and user["role"] != "admin":
+            # Admin email (from ADMIN_EMAIL env var) upgrades to admin on login.
+            if ADMIN_EMAIL and user["email"] == ADMIN_EMAIL and user["role"] != "admin":
                 db.execute("UPDATE users SET role='admin' WHERE id=?", (user["id"],))
                 db.commit()
                 user = db.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
@@ -414,6 +875,44 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
+# Shared footer (shown on the home and search pages only, so other pages
+# keep their existing layout exactly)
+# ---------------------------------------------------------------------------
+FOOTER = """<div class="footer"><div class="footer-inner">
+<div><h4>Help</h4><p><a href="/masters">Masters</a> &middot; <a href="/booking/new">New Booking</a> &middot; <a href="/reports">Reports</a></p>
+<p class="muted">Fare rule: ticket total = seats &times; the transport's major (r_major) rate.</p></div>
+<div><h4>About</h4><p class="muted">TSN Ticket Booking &mdash; a transport ticket booking
+system, here as a cross-platform web app with a saved SQLite database.</p></div>
+<div><h4>Contact</h4><p><a href="https://github.com/rishabh4630/Ticket-Booking-Platform">GitHub repository</a></p></div>
+</div></div>"""
+
+
+def search_card(cities, types, selected=None):
+    selected = selected or {}
+    from_opts = '<option value="">Anywhere</option>' + "".join(
+        f'<option value="{c["city_name"]}"{" selected" if selected.get("from") == c["city_name"] else ""}>{c["city_name"]}</option>'
+        for c in cities
+    )
+    to_opts = '<option value="">Anywhere</option>' + "".join(
+        f'<option value="{c["city_name"]}"{" selected" if selected.get("to") == c["city_name"] else ""}>{c["city_name"]}</option>'
+        for c in cities
+    )
+    type_opts = '<option value="">Any type</option>' + "".join(
+        f'<option value="{t["ttid"]}"{" selected" if str(selected.get("type", "")) == str(t["ttid"]) else ""}>{t["ttname"]}</option>'
+        for t in types
+    )
+    date_val = selected.get("date", "")
+    return f"""<div class="search-card"><form method="get" action="/search">
+    <div class="search-grid">
+    <label>From<select name="from">{from_opts}</select></label>
+    <label>To<select name="to">{to_opts}</select></label>
+    <label>Date<input name="date" type="date" value="{date_val}"></label>
+    <label>Transport Type<select name="type">{type_opts}</select></label>
+    <p style="margin:0"><button class="btn">Search</button></p>
+    </div></form></div>"""
+
+
+# ---------------------------------------------------------------------------
 # Home / Dashboard
 # ---------------------------------------------------------------------------
 @app.route("/")
@@ -430,25 +929,133 @@ def home():
            FROM bookings b JOIN transports t ON t.tid = b.tid
            ORDER BY b.book_no DESC LIMIT 5"""
     ).fetchall()
+    cities = db.execute("SELECT * FROM cities ORDER BY city_name").fetchall()
+    types = db.execute("SELECT * FROM transport_types ORDER BY ttid").fetchall()
+    # Popular Routes on home: first 9 routes only (originals + trunk
+    # corridors). All routes stay searchable and visible under Masters.
+    routes = db.execute("SELECT * FROM routes ORDER BY rid LIMIT 9").fetchall()
+    all_transports = db.execute("SELECT * FROM transports").fetchall()
+    route_cards = ""
+    for r in routes:
+        on_route = [t for t in all_transports if t["rid"] == r["rid"]]
+        if not on_route:
+            continue
+        cheapest = min(on_route, key=lambda t: t["r_major"])
+        via = db.execute(
+            "SELECT via FROM route_det WHERE rid=? ORDER BY id", (r["rid"],)
+        ).fetchall()
+        via_text = ", ".join(v["via"] for v in via)
+        route_cards += f"""<div class="card route-card" onclick="window.location='/search?from={r["st_pos"]}&to={r["dest"]}'"><h3>{r["st_pos"]} &rarr; {r["dest"]}</h3>
+        <p class="muted">{r["r_name"]}{" &middot; Via: " + via_text if via_text else ""}</p>
+        <p class="fare">From Rs. {cheapest["r_major"]} per seat</p>
+        <p><a class="btn" href="/booking/new?tid={cheapest["tid"]}" onclick="event.stopPropagation()">Book</a>
+        <a class="btn secondary" href="/search?from={r["st_pos"]}&to={r["dest"]}" onclick="event.stopPropagation()">View Transports</a></p></div>"""
     stats = "".join(
         f'<div class="card stat"><div class="muted">{k}</div><b>{v}</b></div>'
         for k, v in counts.items()
     )
-    body = f"""<div class="hero"><h1>Book a ticket in under a minute.</h1>
-    <p>Transports, routes, customers and bookings - the TSN Ticket Booking
-    system as a web app. No Oracle or Windows needed.</p></div>
+    body = f"""<div class="hero"><p class="eyebrow">Bus &amp; Train Booking</p><h1>Your journey begins here.</h1>
+    <p>Book bus and train tickets across the network &mdash; transparent fares,
+    seats of your choice, and instant cancellation.</p>
+    {search_card(cities, types)}</div>
+    <div class="trust">
+    <div class="card"><h3>&#10003; Transparent fares</h3><p class="muted">What you see is what you pay: total = seats &times; the transport's major (r_major) rate. No hidden charges.</p></div>
+    <div class="card"><h3>&#10003; Seat of your choice</h3><p class="muted">Pick your own seat numbers. A seat already booked for the same transport and date can never be sold twice.</p></div>
+    <div class="card"><h3>&#10003; Instant cancellation</h3><p class="muted">Cancel any booking and its seats are freed immediately for other travellers.</p></div>
+    </div>
     <div class="grid">{stats}</div>
     <div class="card"><h2>Recent bookings</h2>
     {table_html(recent, [('book_no', 'Booking No'), ('book_date', 'Date'),
                           ('cust_name', 'Customer'), ('tname', 'Transport')])}
     <p><a class="btn" href="/booking/new">New Booking</a>
     <a class="btn secondary" href="/masters">Manage Masters</a></p></div>
-    <div class="card"><h2>About this version</h2>
+    <h2>Popular Routes</h2>
+    <div class="grid">{route_cards or "<p>No routes yet.</p>"}</div>
+    <div class="card"><h2>Why TSN</h2>
+    <ul>
+    <li><b>Complete masters</b> &mdash; transport types, transports, routes with via stops, payment modes and customers, all in one place.</li>
+    <li><b>Reports for all six areas</b> &mdash; the original R1&ndash;R6 reports as plain tables (admin only).</li>
+    <li><b>Login-protected booking</b> &mdash; you see and cancel only your own bookings; admins see everything.</li>
+    </ul>
     <p class="muted">The original project is VB.NET WinForms + Oracle. This web
     version keeps the same masters, transactions and reports on SQLite.
-    Seed data is demo data. Fare rule: ticket total = seats x the transport's
-    major (r_major) rate.</p></div>"""
+    Seed data is demo data.</p></div>
+    {FOOTER}"""
     return page("Home", body)
+
+
+@app.route("/search")
+def search():
+    db = get_db()
+    from_city = request.args.get("from", "").strip()
+    to_city = request.args.get("to", "").strip()
+    travel_date = request.args.get("date", "").strip()
+    type_id = request.args.get("type", "").strip()
+    cities = db.execute("SELECT * FROM cities ORDER BY city_name").fetchall()
+    types = db.execute("SELECT * FROM transport_types ORDER BY ttid").fetchall()
+    sql = """SELECT t.*, tt.ttname FROM transports t
+             LEFT JOIN transport_types tt ON tt.ttid = t.ttid WHERE 1=1"""
+    params = []
+    if from_city:
+        sql += " AND t.st_pos = ?"
+        params.append(from_city)
+    if to_city:
+        sql += " AND t.dest = ?"
+        params.append(to_city)
+    if type_id:
+        sql += " AND t.ttid = ?"
+        params.append(type_id)
+    sql += " ORDER BY t.r_major"
+    rows = db.execute(sql, params).fetchall()
+    cards = ""
+    for t in rows:
+        if travel_date:
+            taken = len(booked_seats(db, t["tid"], travel_date))
+            seats_left = t["capacity"] - taken
+            seats_text = f"{seats_left} seat(s) left on {travel_date}"
+        else:
+            seats_text = f"Capacity {t['capacity']} seats"
+        book_url = f"/booking/new?tid={t['tid']}"
+        if travel_date:
+            book_url += f"&date={travel_date}"
+        cards += f"""<div class="card"><h3>{t["tname"]}</h3>
+        <p>{t["st_pos"]} &rarr; {t["dest"]} &middot; {t["st_time"]} &ndash; {t["reach_time"]} &middot; {t["ttname"] or "Transport"}</p>
+        <p><b>Rs. {t["r_major"]} per seat</b> &middot; {seats_text}</p>
+        <p><a class="btn" href="{book_url}">Book</a></p></div>"""
+    if not cards:
+        cards = """<div class="card"><h3>No transport on this route.</h3>
+        <p class="muted">No transport matches this search. Try different cities,
+        any transport type, or browse the <a href="/masters/transports">Transports</a> list.</p></div>"""
+    selected = {"from": from_city, "to": to_city, "date": travel_date, "type": type_id}
+    # Route info strip (free OSRM + Open-Meteo data). External failures only
+    # hide pieces of the strip -- the results below always still render.
+    strip = ""
+    if from_city and to_city:
+        info = route_info(from_city, to_city)
+        if info:
+            parts = []
+            if "distance" in info:
+                parts.append(f"Road distance: {info['distance']}")
+            if "duration" in info:
+                parts.append(f"Driving time: {info['duration']}")
+            if "weather" in info:
+                parts.append(f"{html.escape(to_city)} ka mausam: {html.escape(info['weather'])}")
+            strip = ('<div class="card route-info"><p><b>Route info:</b> '
+                     + " &middot; ".join(parts) + "</p>"
+                     '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather). '
+                     "Ye sirf jaankari hai — booking ke liye neeche wale transports use karo.</p></div>")
+        else:
+            strip = ('<div class="card route-info"><p class="muted">Route/weather info '
+                     "uplabdh nahi hai (live service se data nahi mila). "
+                     "Search results neeche hain.</p></div>")
+    body = f"""<div class="hero"><h1>Search Transports</h1>
+    <p>Find a transport for your route and book in a few clicks.</p>
+    {search_card(cities, types, selected)}</div>
+    <h2>Results</h2>
+    {strip}
+    {cards}
+    {FOOTER}"""
+    return page("Search Transports", body)
 
 
 # ---------------------------------------------------------------------------
@@ -627,8 +1234,45 @@ def masters_new(kind):
                      select_field("state_code", "State",
                                   [("", "—")] + [(r["state_code"], r["state_name"]) for r in states]),
     }
+    pin_block = ""
+    if kind == "customers":
+        # PIN lookup helper (not a submitted field: it has no name attribute).
+        # On a 6-digit PIN it calls keyless SearchPinCode and, when the
+        # returned District/State match a city/state option, selects them.
+        # Any failure only shows a note -- the form keeps working by hand.
+        pin_block = """<div><label>PIN code (city/state auto-fill ke liye)<input id="pinLookup" inputmode="numeric" maxlength="6" placeholder="e.g. 226001"></label><p class="muted" id="pinSuggest"></p></div>
+    <script>
+    document.getElementById('pinLookup').addEventListener('input', function () {
+      var pin = this.value.replace(/\\D/g, '').slice(0, 6);
+      this.value = pin;
+      var note = document.getElementById('pinSuggest');
+      if (pin.length !== 6) { note.textContent = ''; return; }
+      note.textContent = 'PIN dhoondha ja raha hai...';
+      fetch('https://searchpincode.in/api/pincode/' + pin)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          // Real shape: [{Status, PostOffice: [{Name, District, State, ...}]}]
+          var list = data;
+          if (data && data.length && data[0].PostOffice) list = data[0].PostOffice;
+          if (!list || !list.length) { note.textContent = 'Is PIN ke liye koi post office nahi mila.'; return; }
+          var po = list[0];
+          note.textContent = 'Suggestion: ' + po.Name + ', ' + po.District + ', ' + po.State + ' — city/state neeche match hone par auto-select ho gaye hain.';
+          var citySel = document.querySelector('select[name=city_code]');
+          var stateSel = document.querySelector('select[name=state_code]');
+          function pick(sel, wanted) {
+            if (!sel) return;
+            for (var i = 0; i < sel.options.length; i++) {
+              if (sel.options[i].text.trim().toLowerCase() === String(wanted).toLowerCase()) { sel.selectedIndex = i; break; }
+            }
+          }
+          pick(citySel, po.District);
+          pick(stateSel, po.State);
+        })
+        .catch(function () { note.textContent = 'PIN lookup uplabdh nahi hai, aap city/state haath se chun sakte hain.'; });
+    });
+    </script>"""
     body = f"""<div class="card"><h2>Add {title}</h2><form method="post">
-    {forms[kind]}<p><button>Save</button></p></form></div>"""
+    {forms[kind]}{pin_block}<p><button>Save</button></p></form></div>"""
     return page(f"Add {title}", body)
 
 
@@ -710,8 +1354,17 @@ def new_booking():
         flash(f"Booking created. Booking No: {book_no} - Seats: {', '.join(map(str, sorted(seats)))} - Total: Rs. {total}.")
         return redirect(url_for("ticket", book_no=book_no))
 
+    # Preselect from search / popular-route links: ?tid=<id>&date=<YYYY-MM-DD>.
+    # Values are validated here so query strings cannot inject HTML.
+    try:
+        pre_tid = int(request.args.get("tid", ""))
+    except (TypeError, ValueError):
+        pre_tid = None
+    pre_date = request.args.get("date", "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", pre_date or ""):
+        pre_date = ""
     transport_opts = "".join(
-        f'<option value="{t["tid"]}" data-rate="{t["r_major"]}">{t["tname"]} '
+        f'<option value="{t["tid"]}"{" selected" if pre_tid == t["tid"] else ""} data-rate="{t["r_major"]}">{t["tname"]} '
         f'({t["st_pos"]} to {t["dest"]}, {t["st_time"]}) - Rs. {t["r_major"]} per seat, '
         f'capacity {t["capacity"]}</option>'
         for t in transports
@@ -719,7 +1372,7 @@ def new_booking():
     body = f"""<div class="card"><h2>New Booking</h2><form method="post" id="bookForm">
     <label>Transport<select name="tid" id="tidSel">{transport_opts}</select></label>
     {select_field("cust_code", "Customer", [(c["cust_code"], c["cust_name"] or f'Customer {c["cust_code"]}') for c in customers])}
-    <label>Travel date<input name="book_date" type="date" required></label>
+    <label>Travel date<input name="book_date" type="date" required value="{pre_date}"></label>
     {select_field("pmode_id", "Payment mode", [(p["pmid"], p["pname"]) for p in payments])}
     <label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input name="seats" required placeholder="1, 2"></label>
     <p class="muted" id="totalLine">Fare rule: total = seats x the transport's major (r_major) rate.</p>
@@ -794,7 +1447,7 @@ def ticket(book_no):
     ).fetchall()
     seat_list = ", ".join(str(s["seat_no"]) for s in seats)
     total = len(seats) * transport["r_major"]
-    body = f"""<div class="card"><h2>Ticket - Booking {book_no}</h2>
+    body = f"""<div class="card" id="ticket-card"><h2>Ticket - Booking {book_no}</h2>
     <table>
     <tr><th>Customer</th><td>{booking["cust_name"]}</td></tr>
     <tr><th>Transport</th><td>{transport["tname"]} ({transport["st_pos"]} to {transport["dest"]})</td></tr>
@@ -805,8 +1458,23 @@ def ticket(book_no):
     <tr><th>Total fare</th><td><b>Rs. {total}</b> ({len(seats)} seat(s) x Rs. {transport["r_major"]})</td></tr>
     <tr><th>Payment mode</th><td>{payment["pname"] if payment else "-"}</td></tr>
     </table>
-    <p><a class="btn secondary" href="/booking/{book_no}/cancel">Cancel Booking</a>
-    <a class="btn secondary" href="/bookings">All Bookings</a></p></div>"""
+    <p class="noprint"><button onclick="window.print()">Print Ticket</button>
+    <button onclick="downloadTicketPDF({book_no})">Download PDF</button>
+    <a class="btn secondary" href="/booking/{book_no}/cancel">Cancel Booking</a>
+    <a class="btn secondary" href="/bookings">All Bookings</a></p></div>""" + """
+<script>
+function downloadTicketPDF(bookNo) {
+  var el = document.getElementById('ticket-card');
+  if (!el) { window.print(); return; }
+  function go() { html2pdf().set({margin: 10, filename: 'TSN-Ticket-' + bookNo + '.pdf', html2canvas: {scale: 2}, jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'}}).from(el).save(); }
+  if (window.html2pdf) { go(); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+  s.onload = go;
+  s.onerror = function () { window.print(); };
+  document.head.appendChild(s);
+}
+</script>"""
     return page(f"Ticket {book_no}", body)
 
 
@@ -880,6 +1548,181 @@ def reports():
         for title, rows, cols in sections
     )
     return page("Reports", body)
+
+
+# ---------------------------------------------------------------------------
+# Train Info (Flask only) - live Indian train data via RapidAPI, server-side
+# ---------------------------------------------------------------------------
+@app.route("/train-info", methods=["GET", "POST"])
+def train_info():
+    key_set = bool(os.environ.get("RAPIDAPI_KEY", ""))
+    result = ""
+    if request.method == "POST":
+        kind = request.form.get("form_kind", "")
+        if not key_set:
+            result = train_setup_card()
+        elif kind == "pnr":
+            pnr = request.form.get("pnr", "").strip()
+            if not re.match(r"^\d{10}$", pnr):
+                result = '<div class="card"><p>PNR exactly 10 digits ka hona chahiye.</p></div>'
+            else:
+                data, err = rapidapi_get(TRAIN_API["pnr"].format(pnr=pnr), {})
+                result = train_result_html("PNR status", data, err)
+        elif kind == "between":
+            frm = request.form.get("from_station", "").strip().upper()
+            to = request.form.get("to_station", "").strip().upper()
+            if not re.match(r"^[A-Z]{3,5}$", frm) or not re.match(r"^[A-Z]{3,5}$", to):
+                result = '<div class="card"><p>Station code 3-5 letters ka hona chahiye (jaise NDLS, PNBE).</p></div>'
+            else:
+                data, err = rapidapi_get(TRAIN_API["between"], {"from": frm, "to": to})
+                result = train_result_html("Do stations ke beech trains", data, err)
+        elif kind == "live":
+            train_no = request.form.get("train_no", "").strip()
+            start_date = request.form.get("start_date", "").strip()
+            if not re.match(r"^\d{4,5}$", train_no):
+                result = '<div class="card"><p>Train number 4-5 digits ka hona chahiye.</p></div>'
+            elif not re.match(r"^\d{4}-\d{2}-\d{2}$", start_date):
+                result = '<div class="card"><p>Start date chahiye (YYYY-MM-DD).</p></div>'
+            else:
+                path = TRAIN_API["status"].format(train_no=train_no)
+                data, err = rapidapi_get(path, {"start_date": start_date})
+                result = train_result_html("Live running status", data, err)
+        elif kind == "search":
+            query = request.form.get("query", "").strip()
+            if not query or len(query) > 64:
+                result = '<div class="card"><p>Train ka naam ya number daalo (1-64 characters).</p></div>'
+            else:
+                data, err = rapidapi_get(TRAIN_API["search"], {"query": query})
+                result = train_result_html("Train search", data, err)
+        elif kind == "schedule":
+            train_no = request.form.get("train_no", "").strip()
+            if not re.match(r"^\d{4,5}$", train_no):
+                result = '<div class="card"><p>Train number 4-5 digits ka hona chahiye.</p></div>'
+            else:
+                path = TRAIN_API["schedule"].format(train_no=train_no)
+                data, err = rapidapi_get(path, {})
+                result = train_result_html("Train schedule", data, err)
+        else:
+            result = '<div class="card"><p>Unknown form.</p></div>'
+    if not key_set:
+        body = train_setup_card()
+    else:
+        today = date.today().isoformat()
+        body = f"""<div class="ti-photo-hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
+        <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
+        <div class="card">
+        <p class="muted">Live data RapidAPI "Indian Railway API" (free plan) se aata hai.
+        Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye
+        <a href="/booking/new">New Booking</a> use karo.</p></div>
+        <div class="card"><h3>Do stations ke beech trains</h3><form method="post">
+        <input type="hidden" name="form_kind" value="between">
+        <label>From station code<input name="from_station" placeholder="e.g. NDLS (Delhi)" required></label>
+        <label>To station code<input name="to_station" placeholder="e.g. PNBE (Patna)" required></label>
+        <p class="muted">Station code ticket par likha hota hai (3-5 letters).</p>
+        <p><button>Search Trains</button></p></form></div>
+        <div class="card"><h3>Live running status</h3><form method="post">
+        <input type="hidden" name="form_kind" value="live">
+        <label>Train number<input name="train_no" placeholder="e.g. 12301" required></label>
+        <label>Start date<input name="start_date" type="date" value="{today}" required></label>
+        <p><button>Check Live Status</button></p></form></div>
+        <div class="card"><h3>PNR status</h3><form method="post">
+        <input type="hidden" name="form_kind" value="pnr">
+        <label>10-digit PNR<input name="pnr" maxlength="10" placeholder="e.g. 6410603220" required></label>
+        <p><button>Check PNR Status</button></p></form></div>
+        <div class="card"><h3>Train dhoondo (naam/number se)</h3><form method="post">
+        <input type="hidden" name="form_kind" value="search">
+        <label>Train naam ya number<input name="query" placeholder="e.g. 12301" required></label>
+        <p><button>Search Train</button></p></form></div>
+        <div class="card"><h3>Train schedule</h3><form method="post">
+        <input type="hidden" name="form_kind" value="schedule">
+        <label>Train number<input name="train_no" placeholder="e.g. 12301" required></label>
+        <p><button>View Schedule</button></p></form></div>"""
+        if result:
+            body = result + body
+    return page("Train Info", body)
+
+
+def _train_pick(item, *keys):
+    """First present value among keys; station dicts collapse to name/code."""
+    for key in keys:
+        val = item.get(key)
+        if isinstance(val, dict):
+            val = val.get("name") or val.get("code") or val.get("station_name")
+        if val not in (None, ""):
+            return str(val)
+    return ""
+
+
+def _train_list_items(data):
+    """A list of trains if the response carries one under a likely key."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("trains", "data", "results", "train_list"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return []
+
+
+def _train_item_line(item):
+    if not isinstance(item, dict):
+        return str(item)
+    name = _train_pick(item, "train_name", "name")
+    no = _train_pick(item, "train_number", "number", "train_no")
+    frm = _train_pick(item, "from_station", "from", "source", "from_station_name")
+    to = _train_pick(item, "to_station", "to", "destination", "to_station_name")
+    dep = _train_pick(item, "departure", "departure_time", "dep_time", "from_time")
+    arr = _train_pick(item, "arrival", "arrival_time", "arr_time", "to_time")
+    parts = [p for p in [name, ("Train " + no) if no else "",
+                         (frm + " \u2192 " + to) if frm and to else "",
+                         (dep + " - " + arr) if dep and arr else ""] if p]
+    return " \u00b7 ".join(parts) if parts else None
+
+
+def train_result_html(title, data, err):
+    """Render a Train Info result. Response shapes are not documented, so
+    this renders likely fields when present and always falls back to the
+    full JSON — it never crashes on an unexpected shape."""
+    if err == "no-key":
+        return train_setup_card()
+    if err == "auth":
+        msg = ("Key galat ya plan inactive lag rahi hai — RAPIDAPI_KEY dobara "
+               "check karo (free BASIC plan subscribed hona chahiye).")
+    elif err == "rate":
+        msg = ("Free plan ki limit khatam ho gayi hai — thodi der baad ya "
+               "agle din dobara try karo.")
+    elif err:
+        msg = ("Live data nahi mil paya (%s) — thodi der baad dobara "
+               "try karo." % html.escape(err))
+    else:
+        msg = None
+    if msg:
+        return (f'<div class="card"><h3>{html.escape(title)}</h3>'
+                f"<p>{msg}</p></div>")
+    items = _train_list_items(data)
+    rows = []
+    if isinstance(data, dict):
+        for key, val in data.items():
+            if isinstance(val, (str, int, float, bool)) or val is None:
+                rows.append((str(key), "" if val is None else str(val)))
+    out = [f'<div class="card"><h3>{html.escape(title)}</h3>']
+    if items:
+        out.append("<ul>")
+        for item in items[:50]:
+            line = _train_item_line(item)
+            text = line if line else json.dumps(item, ensure_ascii=False)
+            out.append("<li>" + html.escape(text) + "</li>")
+        out.append("</ul>")
+    elif rows:
+        out.append("<ul>")
+        for key, val in rows:
+            out.append(f"<li><b>{html.escape(key)}</b>: {html.escape(val)}</li>")
+        out.append("</ul>")
+    pretty = html.escape(json.dumps(data, indent=2, ensure_ascii=False))
+    out.append(f'<details><summary>Poora jawab (JSON)</summary>'
+               f'<pre style="white-space:pre-wrap;word-break:break-word">{pretty}</pre></details>')
+    out.append('<p class="muted">Live data: RapidAPI Indian Railway API.</p></div>')
+    return "".join(out)
 
 
 if __name__ == "__main__":
