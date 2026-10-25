@@ -1112,52 +1112,52 @@ def profile():
                  f'<td>{r["seats"]}</td><td>Rs. {r["fare"]}</td>'
                  f'<td><a class="btn secondary" href="{url_for("ticket", book_no=r["book_no"])}">Ticket</a></td></tr>')
     if not rows:
-        rows = '<tr><td colspan="6">Abhi koi booking nahi hai.</td></tr>'
+        rows = '<tr><td colspan="6">No bookings yet.</td></tr>'
     city_opts = "".join(
         f'<option value="{html.escape(c["city_name"])}"{" selected" if c["city_name"] == prefs.get("default_from", "") else ""}>{html.escape(c["city_name"])}</option>'
         for c in cities)
     confirm_card = ""
     if request.args.get("confirm") == "delete":
-        confirm_card = f"""<div class="card"><h3>Account delete karein?</h3>
-        <p>Ye action wapas nahi hoga: tumhara account aur tumhari saari bookings delete ho jayengi.</p>
+        confirm_card = f"""<div class="card"><h3>Delete your account?</h3>
+        <p>This cannot be undone: your account and all your bookings will be deleted.</p>
         <form method="post"><input type="hidden" name="action" value="delete_account">
         <label>Password<input type="password" name="password" required></label>
-        <label><input type="checkbox" name="confirm" value="yes" required> Haan, mera account delete karo</label>
+        <label><input type="checkbox" name="confirm" value="yes" required> Yes, delete my account</label>
         <button type="submit" style="background:#b42318">Delete my account</button>
-        <a class="btn secondary" href="{url_for("profile")}">Wapas</a></form></div>"""
+        <a class="btn secondary" href="{url_for("profile")}">Back</a></form></div>"""
     body = f"""<div class="profile-hero"><div class="profile-avatar">{html.escape(initials)}</div>
     <div><h2>{html.escape(user["name"])}</h2><p>{html.escape(user["email"])}</p>
     <span class="role-pill">{html.escape(user["role"])}</span></div>
-    <div style="margin-left:auto;text-align:right"><p style="margin:0;color:#dbeeff;font-size:.85rem">Web version account<br>is app ke database me save hai</p></div></div>
+    <div style="margin-left:auto;text-align:right"><p style="margin:0;color:#dbeeff;font-size:.85rem">Web version account<br>saved in this app's database</p></div></div>
     <div class="pstat-grid"><div class="pstat"><b>{stats["c"]}</b><span>Total bookings</span></div>
-    <div class="pstat"><b>{stats["seats"]}</b><span>Seats book ki</span></div>
-    <div class="pstat"><b>Rs. {stats["spent"]}</b><span>Total kharcha</span></div></div>
-    <div class="card" style="margin-top:16px"><h3>Meri haal ki bookings</h3>
+    <div class="pstat"><b>{stats["seats"]}</b><span>Seats booked</span></div>
+    <div class="pstat"><b>Rs. {stats["spent"]}</b><span>Total spent</span></div></div>
+    <div class="card" style="margin-top:16px"><h3>My recent bookings</h3>
     <table><tr><th>No.</th><th>Date</th><th>Transport</th><th>Seats</th><th>Fare</th><th></th></tr>{rows}</table>
-    <p><a class="btn" href="{url_for("bookings")}">Saari bookings dekho</a></p></div>
+    <p><a class="btn" href="{url_for("bookings")}">View all bookings</a></p></div>
     <div class="card"><h3>Account</h3>
     <form method="post"><input type="hidden" name="action" value="edit_name">
     <label>Full name<input name="name" value="{html.escape(user["name"])}" required></label>
-    <button type="submit">Naam save karo</button></form>
+    <button type="submit">Save name</button></form>
     <form method="post" style="margin-top:16px"><input type="hidden" name="action" value="change_password">
     <label>Current password<input type="password" name="current_password" required></label>
-    <label>Naya password<input type="password" name="new_password" required placeholder="Kam se kam 8 characters, letter + number"></label>
-    <label>Naya password dobara<input type="password" name="new_password2" required></label>
-    <button type="submit">Password change karo</button></form></div>
+    <label>New password<input type="password" name="new_password" required placeholder="At least 8 characters, letters + numbers"></label>
+    <label>New password again<input type="password" name="new_password2" required></label>
+    <button type="submit">Change password</button></form></div>
     <div class="card"><h3>Settings</h3>
     <form method="post"><input type="hidden" name="action" value="settings">
     <p>Theme<br>
     <label><input type="radio" name="theme" value="system"{" checked" if theme == "system" else ""}> System</label>
     <label><input type="radio" name="theme" value="light"{" checked" if theme == "light" else ""}> Light</label>
     <label><input type="radio" name="theme" value="dark"{" checked" if theme == "dark" else ""}> Dark</label></p>
-    <label>Default departure city (home search me pehle se chuna hoga)
-    <select name="default_from"><option value="">Koi nahi</option>{city_opts}</select></label>
-    <button type="submit">Settings save karo</button></form></div>
-    <div class="card"><h3>Danger zone</h3><p class="muted">Ye actions sirf tumhare account par lagenge.</p>
+    <label>Default departure city (preselected in the home search)
+    <select name="default_from"><option value="">None</option>{city_opts}</select></label>
+    <button type="submit">Save settings</button></form></div>
+    <div class="card"><h3>Danger zone</h3><p class="muted">These actions affect only your account.</p>
     <form method="post" style="display:inline"><input type="hidden" name="action" value="clear_bookings">
-    <label><input type="checkbox" name="confirm" value="yes" required> Meri bookings clear karo</label>
+    <label><input type="checkbox" name="confirm" value="yes" required> Clear my bookings</label>
     <button type="submit">Clear my bookings</button></form>
-    <p style="margin-top:12px"><a class="btn" style="background:#b42318" href="{url_for("profile")}?confirm=delete">Account delete karo</a></p></div>
+    <p style="margin-top:12px"><a class="btn" style="background:#b42318" href="{url_for("profile")}?confirm=delete">Delete account</a></p></div>
     {confirm_card}"""
     return page("Profile & Settings", body)
 
