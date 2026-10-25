@@ -180,6 +180,22 @@ def resolve_coords(city):
     return None
 
 
+def _email_deliverable(email):
+    """Disify check (keyless, no signup): True when the domain has DNS/MX and is
+    not a disposable address. Returns True on any API failure, so a dead
+    third-party service never blocks signup -- format validation still applies."""
+    data = _fetch_json(
+        "https://disify.com/api/email/" + urllib.parse.quote(email),
+        timeout=5,
+        headers={"User-Agent": "TSN-Ticket-Booking/1.0 (student demo)"},
+    )
+    if not data:
+        return True
+    if data.get("dns") is False or data.get("disposable") is True:
+        return False
+    return True
+
+
 def route_info(from_city, to_city, travel_date=None):
     """Road distance + driving time + destination weather, air quality,
     travel-date forecast and a destination guide. Never raises; returns a
@@ -896,6 +912,9 @@ def register():
             return redirect(url_for("register"))
         if len(f["password"]) < 8 or not re.search(r"[A-Za-z]", f["password"]) or not re.search(r"[0-9]", f["password"]):
             flash("Password must be at least 8 characters and include both letters and numbers.")
+            return redirect(url_for("register"))
+        if not _email_deliverable(f["email"].strip()):
+            flash("This email domain cannot receive mail, or it is a temporary/disposable address. Please use your real email.")
             return redirect(url_for("register"))
         if db.execute("SELECT id FROM users WHERE email=?", (f["email"].strip(),)).fetchone():
             flash("That email is already registered. Please log in.")
