@@ -1450,7 +1450,7 @@ function renderProfile() {
   var box = document.getElementById("view-profile");
   if (!box) return;
   if (!session) {
-    box.innerHTML = '<div class="card"><h2>Profile</h2><p class="muted">Apna profile, bookings aur settings dekhne ke liye pehle login karo.</p><p><button class="btn" onclick="showView(\'auth\')">Login / Register</button></p></div>';
+    box.innerHTML = '<div class="card"><h2>Profile</h2><p class="muted">Log in first to view your profile, bookings and settings.</p><p><button class="btn" onclick="showView(\'auth\')">Login / Register</button></p></div>';
     return;
   }
   var mine = myBookings().sort(function (a, b) { return b.bookNo - a.bookNo; });
@@ -1459,10 +1459,10 @@ function renderProfile() {
   var rows = mine.slice(0, 5).map(function (b) {
     var t = transportById(b.tid);
     return "<tr><td><b>" + b.bookNo + "</b></td><td>" + esc(b.bookDate) + "</td><td>" + esc(t ? t.name : "-") + "</td><td>" + b.seats.join(", ") + "</td><td>Rs. " + bookingFare(b) + "</td><td><button class=\"btn secondary\" onclick=\"showTicket(" + b.bookNo + ")\">Ticket</button></td></tr>";
-  }).join("") || '<tr><td colspan="6">Abhi koi booking nahi hai.</td></tr>';
+  }).join("") || '<tr><td colspan="6">No bookings yet.</td></tr>';
   var st = load("tsn_settings", {});
   var theme = st.theme || "system";
-  var fromOpts = '<option value="">Koi nahi</option>' + allOf("cities").map(function (c) {
+  var fromOpts = '<option value="">None</option>' + allOf("cities").map(function (c) {
     return '<option value="' + esc(c.name) + '"' + (c.name === st.defaultFrom ? ' selected' : '') + '>' + esc(c.name) + "</option>";
   }).join("");
   var segBtn = function (t, label) {
@@ -1471,74 +1471,74 @@ function renderProfile() {
   box.innerHTML =
     '<div class="profile-hero"><div class="profile-avatar">' + esc(initialsOf(session.name)) + '</div>' +
     '<div><h2>' + esc(session.name) + '</h2><p>' + esc(session.email) + '</p><span class="role-pill">' + esc(session.role) + '</span></div>' +
-    '<div style="margin-left:auto;text-align:right"><p style="margin:0;color:#dbeeff;font-size:.85rem">Demo account<br>is browser me hi save hai</p></div></div>' +
+    '<div style="margin-left:auto;text-align:right"><p style="margin:0;color:#dbeeff;font-size:.85rem">Demo account<br>saved in this browser only</p></div></div>' +
     '<div class="pstat-grid"><div class="pstat"><b>' + mine.length + '</b><span>Total bookings</span></div>' +
-    '<div class="pstat"><b>' + seats + '</b><span>Seats book ki</span></div>' +
-    '<div class="pstat"><b>Rs. ' + spent + '</b><span>Total kharcha</span></div></div>' +
-    '<div class="card" style="margin-top:16px"><h3>Meri haal ki bookings</h3><table><tr><th>No.</th><th>Date</th><th>Transport</th><th>Seats</th><th>Fare</th><th></th></tr>' + rows + '</table>' +
-    '<p><button class="btn" onclick="showView(\'bookings\')">Saari bookings dekho</button></p></div>' +
+    '<div class="pstat"><b>' + seats + '</b><span>Seats booked</span></div>' +
+    '<div class="pstat"><b>Rs. ' + spent + '</b><span>Total spent</span></div></div>' +
+    '<div class="card" style="margin-top:16px"><h3>My recent bookings</h3><table><tr><th>No.</th><th>Date</th><th>Transport</th><th>Seats</th><th>Fare</th><th></th></tr>' + rows + '</table>' +
+    '<p><button class="btn" onclick="showView(\'bookings\')">View all bookings</button></p></div>' +
     '<div class="card"><h3>Account</h3>' +
     '<label>Full name<input id="pfName" value="' + esc(session.name) + '"></label>' +
-    '<p><button class="btn" onclick="saveProfileName()">Naam save karo</button></p>' +
+    '<p><button class="btn" onclick="saveProfileName()">Save name</button></p>' +
     '<label>Current password<input id="pfCur" type="password" autocomplete="current-password"></label>' +
-    '<label>Naya password<input id="pfNew" type="password" autocomplete="new-password" placeholder="Kam se kam 8 characters, letter + number"></label>' +
-    '<label>Naya password dobara<input id="pfNew2" type="password" autocomplete="new-password"></label>' +
-    '<p><button class="btn" onclick="changeProfilePass()">Password change karo</button></p></div>' +
+    '<label>New password<input id="pfNew" type="password" autocomplete="new-password" placeholder="At least 8 characters, letters + numbers"></label>' +
+    '<label>New password again<input id="pfNew2" type="password" autocomplete="new-password"></label>' +
+    '<p><button class="btn" onclick="changeProfilePass()">Change password</button></p></div>' +
     '<div class="card"><h3>Settings</h3>' +
     '<p class="muted" style="margin-top:0">Theme</p><div class="theme-seg">' + segBtn("system", "System") + segBtn("light", "Light") + segBtn("dark", "Dark") + '</div>' +
-    '<label style="margin-top:14px">Default departure city (home search me pehle se chuna hoga)<select id="pfFrom">' + fromOpts + '</select></label>' +
-    '<p><button class="btn" onclick="saveProfileSettings()">Settings save karo</button></p></div>' +
-    '<div class="card"><h3>Danger zone</h3><p class="muted">Ye actions sirf tumhare account par lagenge, seed demo data par nahi.</p>' +
-    '<p><button class="btn" onclick="clearMyBookings()">Meri bookings clear karo</button> ' +
-    '<button class="btn" style="background:#b42318" onclick="deleteMyAccount()">Account delete karo</button></p></div>';
+    '<label style="margin-top:14px">Default departure city (preselected in the home search)<select id="pfFrom">' + fromOpts + '</select></label>' +
+    '<p><button class="btn" onclick="saveProfileSettings()">Save settings</button></p></div>' +
+    '<div class="card"><h3>Danger zone</h3><p class="muted">These actions affect only your account, not the seed demo data.</p>' +
+    '<p><button class="btn" onclick="clearMyBookings()">Clear my bookings</button> ' +
+    '<button class="btn" style="background:#b42318" onclick="deleteMyAccount()">Delete account</button></p></div>';
 }
 function saveProfileName() {
   var v = document.getElementById("pfName").value.trim();
-  if (!v) { flashMsg("Naam khaali nahi ho sakta."); return; }
+  if (!v) { flashMsg("Name cannot be empty."); return; }
   var acc = accounts.filter(function (x) { return x.email === session.email; })[0];
   if (acc) acc.name = v;
   save("tsn_accounts", accounts);
   session.name = v; save("tsn_session", session);
   updateNav(); renderProfile();
-  flashMsg("Naam update ho gaya.");
+  flashMsg("Name updated.");
 }
 function changeProfilePass() {
   var cur = document.getElementById("pfCur").value;
   var nw = document.getElementById("pfNew").value;
   var nw2 = document.getElementById("pfNew2").value;
   var acc = accounts.filter(function (x) { return x.email === session.email; })[0];
-  if (!acc || acc.hash !== demoHash(cur)) { flashMsg("Current password galat hai."); return; }
-  if (nw.length < 8 || !/[A-Za-z]/.test(nw) || !/[0-9]/.test(nw)) { flashMsg("Naya password kam se kam 8 characters ka ho, usme letter aur number dono hon."); return; }
-  if (nw !== nw2) { flashMsg("Naya password dobara same nahi hai."); return; }
+  if (!acc || acc.hash !== demoHash(cur)) { flashMsg("Current password is incorrect."); return; }
+  if (nw.length < 8 || !/[A-Za-z]/.test(nw) || !/[0-9]/.test(nw)) { flashMsg("New password must be at least 8 characters with both letters and numbers."); return; }
+  if (nw !== nw2) { flashMsg("New passwords do not match."); return; }
   acc.hash = demoHash(nw); save("tsn_accounts", accounts);
   document.getElementById("pfCur").value = ""; document.getElementById("pfNew").value = ""; document.getElementById("pfNew2").value = "";
-  flashMsg("Password change ho gaya.");
+  flashMsg("Password changed.");
 }
 function setProfileTheme(t) {
   var st = load("tsn_settings", {}); st.theme = t; save("tsn_settings", st); applyTheme(t); renderProfile();
-  flashMsg("Theme save ho gaya.");
+  flashMsg("Theme saved.");
 }
 function saveProfileSettings() {
   var st = load("tsn_settings", {}); st.defaultFrom = document.getElementById("pfFrom").value; save("tsn_settings", st);
   renderProfile();
-  flashMsg("Settings save ho gayi.");
+  flashMsg("Settings saved.");
 }
 function clearMyBookings() {
-  if (!confirm("Apni saari bookings delete karni hain? Ye wapas nahi aayengi.")) return;
+  if (!confirm("Delete all your bookings? This cannot be undone.")) return;
   bookings = bookings.filter(function (b) { return b.userEmail !== session.email; });
   save("tsn_bookings", bookings);
   renderProfile();
-  flashMsg("Tumhari bookings clear ho gayi.");
+  flashMsg("Your bookings have been cleared.");
 }
 function deleteMyAccount() {
-  if (!confirm("Account delete karna hai? Tumhara naam, login aur bookings sab hat jayenge.")) return;
+  if (!confirm("Delete your account? Your name, login and bookings will all be removed.")) return;
   accounts = accounts.filter(function (x) { return x.email !== session.email; });
   save("tsn_accounts", accounts);
   bookings = bookings.filter(function (b) { return b.userEmail !== session.email; });
   save("tsn_bookings", bookings);
   session = null; save("tsn_session", null);
   updateNav(); showView("auth");
-  flashMsg("Account delete ho gaya.");
+  flashMsg("Account deleted.");
 }
 applyTheme((load("tsn_settings", {}).theme) || "system");
 updateNav();
