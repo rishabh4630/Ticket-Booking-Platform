@@ -239,7 +239,9 @@ def rapidapi_get(path, params):
 
 
 def train_setup_card():
-    return """<div class="card"><h2>Train Info — setup chahiye</h2>
+    return """<div class="hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
+    <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
+    <div class="card"><h2>Setup chahiye</h2>
     <p>Live train data (do stations ke beech trains, live running status, PNR status)
     ke liye <b>free RapidAPI key</b> chahiye. Key ke bina ye page error nahi dega —
     bas setup steps dikhayega.</p>
@@ -1557,7 +1559,9 @@ def train_info():
         body = train_setup_card()
     else:
         today = date.today().isoformat()
-        body = f"""<div class="card"><h2>Train Info — Live Train Data</h2>
+        body = f"""<div class="hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>
+        <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
+        <div class="card">
         <p class="muted">Live data RapidAPI "Indian Railway API" (free plan) se aata hai.
         Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye
         <a href="/booking/new">New Booking</a> use karo.</p></div>
