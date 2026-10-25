@@ -918,6 +918,7 @@ function renderBooking() {
     '<div class="card"><h2>New Booking</h2>' +
     '<label>Transport<select id="bk_tid">' + tOpts + "</select></label>" +
     '<label>Customer<select id="bk_cust">' + cOpts + "</select></label>" +
+    '<label>Or new customer name (if not in the list)<input id="bk_new_cust" placeholder="e.g. Aarav Kumar"></label>' +
     '<label>Travel date<input id="bk_date" type="date"></label>' +
     '<label>Payment mode<select id="bk_pmode">' + pOpts + "</select></label>" +
     '<label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input id="bk_seats" placeholder="1, 2"></label>' +
@@ -941,10 +942,25 @@ function renderBooking() {
 }
 function submitBooking() {
   var tid = parseInt(document.getElementById("bk_tid").value, 10);
-  var custCode = parseInt(document.getElementById("bk_cust").value, 10);
   var pmodeId = parseInt(document.getElementById("bk_pmode").value, 10);
   var date = document.getElementById("bk_date").value;
   var seats = parseSeats(document.getElementById("bk_seats").value);
+  var newName = (document.getElementById("bk_new_cust").value || "").trim();
+  var custCode;
+  if (newName) {
+    var list = allOf("customers");
+    var found = list.find(function (c) { return (c.name || "").trim().toLowerCase() === newName.toLowerCase(); });
+    if (found) {
+      custCode = found.code;
+    } else {
+      var nc = {code: nextId(list, "code"), name: newName, age: 0, sex: "", address: "", street: 0, city: 0, state: 0, phone: ""};
+      addedMasters.customers.push(nc);
+      save("tsn_added_masters", addedMasters);
+      custCode = nc.code;
+    }
+  } else {
+    custCode = parseInt(document.getElementById("bk_cust").value, 10);
+  }
   var result = createBooking(tid, custCode, date, pmodeId, seats);
   if (typeof result === "string") { flashMsg(result); return; }
   var transport = transportById(tid);
