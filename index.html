@@ -1174,7 +1174,9 @@ function renderTrainInfo() {
     ? '<p class="muted">Key save hai (sirf is browser me). Hatane ke liye Clear dabao.</p>'
     : '<p>Forms chalane ke liye pehle apni free RapidAPI key upar save karo — bina key ke koi live call nahi bheji jaati.</p>';
   document.getElementById("view-traininfo").innerHTML =
-    '<div class="card"><h2>Train Info — Live Train Data</h2>' +
+    '<div class="hero"><div class="eyebrow">Live Train Data</div><h1>Train Info</h1>' +
+    '<p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>' +
+    '<div class="card">' +
     "<p>Live train data <b>RapidAPI Indian Railway API</b> (free plan) se aata hai. " +
     "Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye New Booking use karo.</p>" +
     '<p class="muted">Note: train ki live jaankari aur TSN demo bookings alag cheezein hain.</p></div>' +
