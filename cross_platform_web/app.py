@@ -181,19 +181,25 @@ def resolve_coords(city):
 
 
 def _email_deliverable(email):
-    """Disify check (keyless, no signup): True when the domain has DNS/MX and is
-    not a disposable address. Returns True on any API failure, so a dead
-    third-party service never blocks signup -- format validation still applies."""
+    """Disify check (keyless, no signup). Strict: returns "ok" only when the
+    domain positively confirms DNS/MX and a non-disposable address.
+    "dns" = domain cannot receive mail, "disposable" = temporary address,
+    "unverifiable" = API failure, timeout or unexpected reply. Anything
+    other than "ok" blocks signup -- an unverified email is never allowed."""
     data = _fetch_json(
         "https://disify.com/api/email/" + urllib.parse.quote(email),
         timeout=5,
         headers={"User-Agent": "TSN-Ticket-Booking/1.0 (student demo)"},
     )
-    if not data:
-        return True
-    if data.get("dns") is False or data.get("disposable") is True:
-        return False
-    return True
+    if not data or not isinstance(data, dict):
+        return "unverifiable"
+    if data.get("dns") is False:
+        return "dns"
+    if data.get("disposable") is True:
+        return "disposable"
+    if data.get("dns") is not True:
+        return "unverifiable"
+    return "ok"
 
 
 def route_info(from_city, to_city, travel_date=None):
@@ -954,11 +960,18 @@ def register():
         if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$", f["email"].strip()):
             flash("Please enter a valid email address (e.g. name@example.com).")
             return redirect(url_for("register"))
-        if len(f["password"]) < 8 or not re.search(r"[A-Za-z]", f["password"]) or not re.search(r"[0-9]", f["password"]):
-            flash("Password must be at least 8 characters and include both letters and numbers.")
+        if len(f["password"]) < 8 or not re.search(r"[a-z]", f["password"]) or not re.search(r"[A-Z]", f["password"]) or not re.search(r"[0-9]", f["password"]):
+            flash("Password must be at least 8 characters and include uppercase, lowercase and a number.")
             return redirect(url_for("register"))
-        if not _email_deliverable(f["email"].strip()):
-            flash("This email domain cannot receive mail, or it is a temporary/disposable address. Please use your real email.")
+        _email_check = _email_deliverable(f["email"].strip())
+        if _email_check == "dns":
+            flash("This email domain cannot receive email. Please use a valid email address.")
+            return redirect(url_for("register"))
+        if _email_check == "disposable":
+            flash("Temporary/disposable emails are not allowed. Please use your real email.")
+            return redirect(url_for("register"))
+        if _email_check != "ok":
+            flash("Email could not be verified. Please try again.")
             return redirect(url_for("register"))
         if db.execute("SELECT id FROM users WHERE email=?", (f["email"].strip(),)).fetchone():
             flash("That email is already registered. Please log in.")
@@ -1045,8 +1058,8 @@ def profile():
             urow = db.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
             if not check_password_hash(urow["password_hash"], cur):
                 flash("Current password is incorrect.")
-            elif len(new) < 8 or not re.search(r"[A-Za-z]", new) or not re.search(r"[0-9]", new):
-                flash("Password must be at least 8 characters and include both letters and numbers.")
+            elif len(new) < 8 or not re.search(r"[a-z]", new) or not re.search(r"[A-Z]", new) or not re.search(r"[0-9]", new):
+                flash("Password must be at least 8 characters and include uppercase, lowercase and a number.")
             elif new != new2:
                 flash("New passwords do not match.")
             else:
@@ -1141,7 +1154,7 @@ def profile():
     <button type="submit">Save name</button></form>
     <form method="post" style="margin-top:16px"><input type="hidden" name="action" value="change_password">
     <label>Current password<input type="password" name="current_password" required></label>
-    <label>New password<input type="password" name="new_password" required placeholder="At least 8 characters, letters + numbers"></label>
+    <label>New password<input type="password" name="new_password" required placeholder="At least 8 characters, uppercase, lowercase + number"></label>
     <label>New password again<input type="password" name="new_password2" required></label>
     <button type="submit">Change password</button></form></div>
     <div class="card"><h3>Settings</h3>

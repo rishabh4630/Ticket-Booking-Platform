@@ -461,8 +461,8 @@ function requireLogin() {
 function signUp(name, email, password) {
   email = email.trim().toLowerCase();
   if (!name.trim() || !email || !password) return "Name, email and password are required.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return "Sahi email daalo, jaise naam@example.com";
-  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return "Password kam se kam 8 characters ka ho, usme letter aur number dono hon.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return "Please enter a valid email address (e.g. name@example.com).";
+  if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) return "Password must be at least 8 characters with uppercase, lowercase and a number.";
   if (accounts.some(function (a) { return a.email === email; })) return "That email is already registered. Please log in.";
   accounts.push({name: name.trim(), email: email, hash: demoHash(password), role: "customer"});
   save("tsn_accounts", accounts);
@@ -1196,7 +1196,7 @@ function renderAuth() {
   var nameField = authTab === "signup" ? '<label>Full name<input id="auth_name"></label>' : "";
   var note = authTab === "login"
     ? '<p class="muted">Accounts are stored only in this browser with a demo hash, not production security. Do not use a real password here.</p>'
-    : '<p class="muted">Your account is stored only in this browser. Email sahi format me aur password kam se kam 8 characters (letter + number) hona chahiye; nothing leaves this device.</p>';
+    : '<p class="muted">Your account is stored only in this browser. Email must be in a valid format and the password at least 8 characters (uppercase, lowercase + number); nothing leaves this device.</p>';
   var switchLink = authTab === "login"
     ? '<p class="muted">No account yet? <a onclick="authTab=\'signup\';renderAuth()" style="cursor:pointer">Sign up</a></p>'
     : '<p class="muted">Already have an account? <a onclick="authTab=\'login\';renderAuth()" style="cursor:pointer">Log in</a></p>';
@@ -1213,14 +1213,15 @@ function submitAuth() {
     var nm = document.getElementById("auth_name").value;
     var em = email.trim().toLowerCase();
     if (!nm.trim() || !em || !pass) { flashMsg("Name, email and password are required."); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { flashMsg("Sahi email daalo, jaise naam@example.com"); return; }
-    if (pass.length < 8 || !/[A-Za-z]/.test(pass) || !/[0-9]/.test(pass)) { flashMsg("Password kam se kam 8 characters ka ho, usme letter aur number dono hon."); return; }
-    flashMsg("Email verify ho rahi hai...");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { flashMsg("Please enter a valid email address (e.g. name@example.com)."); return; }
+    if (pass.length < 8 || !/[a-z]/.test(pass) || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) { flashMsg("Password must be at least 8 characters with uppercase, lowercase and a number."); return; }
+    flashMsg("Verifying email…");
     fetchTimeout("https://disify.com/api/email/" + encodeURIComponent(em), 6000)
       .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; })
       .then(function(d){
-        if (d && d.dns === false) { flashMsg("Is domain par email nahi pahunch sakta — sahi domain wala email daalo."); return; }
-        if (d && d.disposable === true) { flashMsg("Temporary/disposable email allowed nahi hai — apna asli email daalo."); return; }
+        if (!d) { flashMsg("Email could not be verified. Please try again."); return; }
+        if (d.dns === false) { flashMsg("This email domain cannot receive email. Please use a valid email address."); return; }
+        if (d.disposable === true) { flashMsg("Temporary/disposable emails are not allowed. Please use your real email."); return; }
         var err = signUp(nm, email, pass);
         if (err) { flashMsg(err); return; }
         flashMsg("Account created. Please log in.");
@@ -1481,7 +1482,7 @@ function renderProfile() {
     '<label>Full name<input id="pfName" value="' + esc(session.name) + '"></label>' +
     '<p><button class="btn" onclick="saveProfileName()">Save name</button></p>' +
     '<label>Current password<input id="pfCur" type="password" autocomplete="current-password"></label>' +
-    '<label>New password<input id="pfNew" type="password" autocomplete="new-password" placeholder="At least 8 characters, letters + numbers"></label>' +
+    '<label>New password<input id="pfNew" type="password" autocomplete="new-password" placeholder="At least 8 characters, uppercase, lowercase + number"></label>' +
     '<label>New password again<input id="pfNew2" type="password" autocomplete="new-password"></label>' +
     '<p><button class="btn" onclick="changeProfilePass()">Change password</button></p></div>' +
     '<div class="card"><h3>Settings</h3>' +
@@ -1508,7 +1509,7 @@ function changeProfilePass() {
   var nw2 = document.getElementById("pfNew2").value;
   var acc = accounts.filter(function (x) { return x.email === session.email; })[0];
   if (!acc || acc.hash !== demoHash(cur)) { flashMsg("Current password is incorrect."); return; }
-  if (nw.length < 8 || !/[A-Za-z]/.test(nw) || !/[0-9]/.test(nw)) { flashMsg("New password must be at least 8 characters with both letters and numbers."); return; }
+  if (nw.length < 8 || !/[a-z]/.test(nw) || !/[A-Z]/.test(nw) || !/[0-9]/.test(nw)) { flashMsg("New password must be at least 8 characters with uppercase, lowercase and a number."); return; }
   if (nw !== nw2) { flashMsg("New passwords do not match."); return; }
   acc.hash = demoHash(nw); save("tsn_accounts", accounts);
   document.getElementById("pfCur").value = ""; document.getElementById("pfNew").value = ""; document.getElementById("pfNew2").value = "";
