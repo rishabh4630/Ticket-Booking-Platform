@@ -42,11 +42,10 @@ DATABASE = os.path.join(BASE_DIR, "ticket_booking.db")
 app = Flask(__name__)
 app.secret_key = "tsn-ticket-booking-dev-key-change-me"
 
-# The owner account: logging in with this email automatically becomes admin,
-# so there is no separate admin signup/login page.
-# NOTE (same as the Airline project): this email is the GitHub account email
-# on file and must be confirmed/changed if it is not the owner's real email.
-OWNER_EMAIL = "rishabhsingh4630@gmail.com"
+# Admin access: set ADMIN_EMAIL in the environment before starting the app.
+# Logging in with that email becomes admin. If it is not set, no account
+# auto-becomes admin. The address is never shown on any page.
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
 
 
 # ---------------------------------------------------------------------------
@@ -848,8 +847,8 @@ def login():
             "SELECT * FROM users WHERE email=?", (f["email"].strip(),)
         ).fetchone()
         if user and check_password_hash(user["password_hash"], f["password"]):
-            # Owner email auto-upgrades to admin on login (same as Airline).
-            if user["email"] == OWNER_EMAIL and user["role"] != "admin":
+            # Admin email (from ADMIN_EMAIL env var) upgrades to admin on login.
+            if ADMIN_EMAIL and user["email"] == ADMIN_EMAIL and user["role"] != "admin":
                 db.execute("UPDATE users SET role='admin' WHERE id=?", (user["id"],))
                 db.commit()
                 user = db.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()

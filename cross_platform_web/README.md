@@ -38,12 +38,14 @@ Requirements: Python 3 + Flask (`pip install -r requirements.txt`).
   Customer Transactions, Route Transactions.
 - **Login / Sign Up** — passwords are hashed (Werkzeug), never stored in
   plain text. The original project's hardcoded demo login is deliberately
-  NOT copied here. Logging in with the owner email
-  `rishabhsingh4630@gmail.com` automatically becomes admin (same pattern as
-  the Airline Reservation System project — please confirm/change this email
-  if it is not the owner's real email); all other accounts stay customers.
-  Customers see and cancel only their own bookings; admins see all bookings
-  and the reports.
+  NOT copied here. In the Flask app, admin access is granted by setting
+  the ADMIN_EMAIL environment variable before starting the app; if it
+  is not set, no account becomes admin automatically, and the address
+  is never shown on the site. In the static demo, admin access is
+  unlocked with an admin code set in the demo source (DEMO_ADMIN_CODE);
+  the code itself is never shown on the site. All other accounts stay
+  customers. Customers see and cancel only their own bookings; admins
+  see all bookings and the reports.
 
 ## Fare rule
 

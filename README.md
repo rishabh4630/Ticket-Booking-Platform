@@ -276,7 +276,7 @@ http://127.0.0.1:5000
 
 > Requirements: Python 3.10 or newer — download from https://www.python.org/downloads/ (on Windows, tick "Add Python to PATH" during install).
 
-Then sign up, log in, manage masters, book tickets (fare = seats × the transport's major rate) and view reports (admin only). The owner email `rishabhsingh4630@gmail.com` becomes admin automatically on login (please confirm this is the right owner email).
+Then sign up, log in, manage masters, book tickets (fare = seats × the transport's major rate) and view reports (admin only). Admin access in the Flask app is granted by setting the ADMIN_EMAIL environment variable before starting the app; no email is shown on the site, and no account becomes admin automatically without it.
 
 ---
 
