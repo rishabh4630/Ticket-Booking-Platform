@@ -49,6 +49,8 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 .footer h4{margin:0 0 8px;color:var(--navy)}
 .footer a{color:var(--blue);text-decoration:none;cursor:pointer}
 @media (max-width:700px){.search-grid{grid-template-columns:1fr 1fr}}
+.route-info{border-left:4px solid var(--blue)}
+.route-info p{margin:4px 0 0}
 </style>
 </head>
 <body>
@@ -60,6 +62,7 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 <a onclick="showView('booking')">New Booking</a>
 <a onclick="showView('bookings')">Bookings</a>
 <a id="navReports" onclick="showView('reports')" style="display:none">Reports</a>
+<a onclick="showView('traininfo')">Train Info</a>
 </nav>
 <nav class="nav-auth">
 <span id="navUser"></span>
@@ -77,6 +80,7 @@ button.secondary,.btn.secondary{background:#fff;color:var(--navy);border:1px sol
 <div id="view-ticket" style="display:none"></div>
 <div id="view-reports" style="display:none"></div>
 <div id="view-auth" style="display:none"></div>
+<div id="view-traininfo" style="display:none"></div>
 </main>
 <script>
 // ---------- TSN Ticket Booking - static live demo ----------
@@ -319,12 +323,97 @@ function renderSearchResults(list, date) {
       '<p><button onclick="bookTransport(' + t.id + ", '" + esc(date || "") + '\')">Book</button></p></div>';
   }).join("");
 }
+// ---------- Free external APIs (keyless; never break search or booking) ----------
+// OSRM (road distance/driving time) + Open-Meteo (destination weather), both
+// CORS-enabled, so the static demo can call them straight from the browser.
+// Any failure only hides that piece of the strip (or shows a short note).
+var CITY_COORDS = {
+  Lucknow: [26.8467, 80.9462], Delhi: [28.6139, 77.2090], Mumbai: [19.0760, 72.8777],
+  Bengaluru: [12.9716, 77.5946], Varanasi: [25.3176, 82.9739]
+};
+function fmtKm(m) { return m < 10000 ? (m / 1000).toFixed(1) + " km" : Math.round(m / 1000) + " km"; }
+function fmtDur(s) {
+  var h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  if (m === 60) { h += 1; m = 0; }
+  return h > 0 ? h + "h " + m + "m" : m + "m";
+}
+function weatherLabel(code) {
+  if (code === null || code === undefined) return "mausam uplabdh nahi";
+  if (code === 0) return "Saaf aasmaan";
+  if (code === 1) return "Zyaada tar saaf";
+  if (code === 2) return "Halke baadal";
+  if (code === 3) return "Baadal";
+  if (code === 45 || code === 48) return "Kohra";
+  if ([51, 53, 55, 56, 57].indexOf(code) !== -1) return "Halki boondabaandi";
+  if (code === 61 || code === 80) return "Halki baarish";
+  if (code === 63 || code === 81) return "Baarish";
+  if ([65, 82, 66, 67].indexOf(code) !== -1) return "Tez baarish";
+  if ([71, 73, 75, 77, 85, 86].indexOf(code) !== -1) return "Barf";
+  if (code >= 95) return "Aandhi-toofan";
+  return "mausam uplabdh nahi";
+}
+function fetchTimeout(url, ms) {
+  var c = new AbortController();
+  var t = setTimeout(function () { c.abort(); }, ms);
+  return fetch(url, {signal: c.signal}).finally(function () { clearTimeout(t); });
+}
+function resolveCoords(city) {
+  if (CITY_COORDS[city]) return Promise.resolve(CITY_COORDS[city]);
+  return fetchTimeout("https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
+    encodeURIComponent(city + ", India"), 6000)
+    .then(function (r) { return r.json(); })
+    .then(function (d) { return (d && d.length) ? [parseFloat(d[0].lat), parseFloat(d[0].lon)] : null; })
+    .catch(function () { return null; });
+}
+function loadRouteInfo(from, to) {
+  var el = document.getElementById("home-route-info");
+  if (!el) return;
+  if (!from || !to) { el.innerHTML = ""; return; }
+  el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info load ho rahi hai...</p></div>';
+  Promise.all([resolveCoords(from), resolveCoords(to)]).then(function (coords) {
+    var a = coords[0], b = coords[1];
+    var routeJob = (a && b)
+      ? fetchTimeout("https://router.project-osrm.org/route/v1/driving/" + a[1] + "," + a[0] + ";" +
+          b[1] + "," + b[0] + "?overview=false", 6000)
+          .then(function (r) { return r.json(); })
+          .then(function (d) { return (d && d.routes && d.routes.length) ? d.routes[0] : null; })
+          .catch(function () { return null; })
+      : Promise.resolve(null);
+    var weatherJob = b
+      ? fetchTimeout("https://api.open-meteo.com/v1/forecast?latitude=" + b[0] + "&longitude=" + b[1] +
+          "&current=temperature_2m,weather_code&timezone=Asia%2FKolkata", 6000)
+          .then(function (r) { return r.json(); })
+          .then(function (d) { return (d && d.current) ? d.current : null; })
+          .catch(function () { return null; })
+      : Promise.resolve(null);
+    return Promise.all([routeJob, weatherJob]);
+  }).then(function (res) {
+    var route = res[0], weather = res[1];
+    var parts = [];
+    if (route) { parts.push("Road distance: " + fmtKm(route.distance)); parts.push("Driving time: " + fmtDur(route.duration)); }
+    if (weather && weather.temperature_2m !== undefined) {
+      parts.push(esc(to) + " ka mausam: " + weather.temperature_2m + "°C, " + weatherLabel(weather.weather_code));
+    }
+    if (!parts.length) {
+      el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info uplabdh nahi hai ' +
+        "(live service se data nahi mila). Search results neeche hain.</p></div>";
+    } else {
+      el.innerHTML = '<div class="card route-info"><p><b>Route info:</b> ' + parts.join(" &middot; ") + "</p>" +
+        '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather). Ye sirf jaankari hai — ' +
+        "booking ke liye neeche wale transports use karo.</p></div>";
+    }
+  }).catch(function () {
+    el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info uplabdh nahi hai. Search results neeche hain.</p></div>';
+  });
+}
+
 function doHomeSearch() {
   var from = document.getElementById("hs_from").value;
   var to = document.getElementById("hs_to").value;
   var typeId = parseInt(document.getElementById("hs_type").value, 10) || 0;
   var date = document.getElementById("hs_date").value;
   renderSearchResults(searchTransports(from, to, typeId), date);
+  loadRouteInfo(from, to);
 }
 function bookTransport(tid, date) {
   if (!requireLogin()) return;
@@ -372,6 +461,7 @@ function renderHome() {
     '<div class="hero"><h1>Your journey begins here.</h1>' +
     "<p>Book bus and train tickets across the network &mdash; transparent fares, seats of your choice, and instant cancellation.</p>" +
     searchCard + "</div>" +
+    '<div id="home-route-info"></div>' +
     '<div id="home-search-results"></div>' +
     '<div class="trust">' +
     '<div class="card"><h3>&#10003; Transparent fares</h3><p class="muted">What you see is what you pay: total = seats &times; the transport\'s major (r_major) rate. No hidden charges.</p></div>' +
@@ -431,7 +521,7 @@ var MASTER_FORMS = {
   payments: [["pname", "Payment mode"], ["p_desc", "Description"]],
   routes: [["r_name", "Route name"], ["st_pos", "Starting point"], ["dest", "Destination"], ["via", "Via stops (comma-separated)"]],
   transports: [["tname", "Transport name"], ["capacity", "Capacity"], ["r_minor", "Minor rate"], ["r_major", "Major rate (per seat)"], ["st_pos", "Starting point"], ["dest", "Destination"], ["st_time", "Departure time"], ["reach_time", "Arrival time"]],
-  customers: [["cust_name", "Customer name"], ["age", "Age"], ["sex", "Sex"], ["cust_add", "Address"], ["cust_phone", "Phone"]]
+  customers: [["cust_name", "Customer name"], ["age", "Age"], ["sex", "Sex"], ["cust_add", "Address"], ["cust_phone", "Phone"], ["pin_lookup", "PIN code (city/state suggestion)"]]
 };
 function renderMasters() {
   var tabs = MASTER_TABS.map(function (t) {
@@ -443,7 +533,10 @@ function renderMasters() {
     var fields = MASTER_FORMS[masterTab].map(function (f) {
       return "<label>" + esc(f[1]) + '<input id="add_' + f[0] + '"></label>';
     }).join("");
-    addForm = '<div class="card"><h3>Add ' + esc(title) + "</h3>" + fields +
+    // Demo customers form has no city/state fields, so the PIN lookup only
+    // shows the post office suggestion (the user can copy it into Address).
+    var pinNote = masterTab === "customers" ? '<p class="muted" id="pinSuggest"></p>' : "";
+    addForm = '<div class="card"><h3>Add ' + esc(title) + "</h3>" + fields + pinNote +
       '<p><button onclick="addMaster()">Save</button></p>' +
       '<p class="muted">Admin only. Added rows are saved in this browser only.</p></div>';
   } else {
@@ -453,6 +546,31 @@ function renderMasters() {
     "<h2>Masters</h2><div class='tabs'>" + tabs + "</div>" +
     '<div class="card"><h2>' + esc(title) + "</h2>" +
     tableHtml(MASTER_HEADERS[masterTab], masterRows(masterTab)) + "</div>" + addForm;
+  // PIN lookup listener (attached here, not via injected <script>, because
+  // scripts set through innerHTML do not run). Any failure only shows a note.
+  var pinInput = document.getElementById("add_pin_lookup");
+  if (pinInput) {
+    pinInput.addEventListener("input", function () {
+      var pin = pinInput.value.replace(/\D/g, "").slice(0, 6);
+      pinInput.value = pin;
+      var note = document.getElementById("pinSuggest");
+      if (!note) return;
+      if (pin.length !== 6) { note.textContent = ""; return; }
+      note.textContent = "PIN dhoondha ja raha hai...";
+      fetch("https://searchpincode.in/api/pincode/" + pin)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          // Real shape: [{Status, PostOffice: [{Name, District, State, ...}]}]
+          var list = data;
+          if (data && data.length && data[0].PostOffice) list = data[0].PostOffice;
+          if (!list || !list.length) { note.textContent = "Is PIN ke liye koi post office nahi mila."; return; }
+          var po = list[0];
+          note.textContent = "Suggestion: " + po.Name + ", " + po.District + ", " + po.State +
+            " — is demo form me city/state field nahi hai, isliye ise Address me likh sakte hain.";
+        })
+        .catch(function () { note.textContent = "PIN lookup uplabdh nahi hai."; });
+    });
+  }
 }
 function nextId(list, key) { return list.reduce(function (m, x) { return Math.max(m, x[key]); }, 0) + 1; }
 function addMaster() {
@@ -676,8 +794,35 @@ function submitAuth() {
   }
 }
 
+// ---------- Train Info (demo: honest card, no live data, no fake data) ----------
+// Live train data needs a RapidAPI key, and a key must never live in a static
+// page anyone can read, so these forms are disabled here on purpose. The
+// Flask version's Train Info page is the one that calls the API server-side.
+function renderTrainInfo() {
+  var disabledForm = function (title, fields) {
+    return '<div class="card" style="opacity:.65"><h3>' + title + " (demo me band)</h3>" +
+      fields.map(function (f) {
+        return "<label>" + f + '<input disabled placeholder="Flask version me chalta hai"></label>';
+      }).join("") + '<p><button disabled>Search</button></p></div>';
+  };
+  document.getElementById("view-traininfo").innerHTML =
+    '<div class="card"><h2>Train Info — Live Train Data</h2>' +
+    "<p>Live train data (do stations ke beech trains, live running status, PNR status) ke liye " +
+    "<b>Flask version + free RapidAPI key</b> chahiye. Static demo me API key rakhna safe nahi hai, " +
+    "isliye ye forms yahan band hain — <b>koi nakli train data nahi dikhaya ja raha</b>.</p>" +
+    "<h3>Setup (Flask version ke liye)</h3><ol>" +
+    "<li>RapidAPI par free account banao.</li>" +
+    '<li><a href="https://rapidapi.com/software-on-service-software-on-service-default/api/indian-railway-api1" target="_blank" rel="noreferrer">Indian Railway API</a> listing kholo aur free BASIC plan subscribe karo.</li>' +
+    "<li>Apni key copy karo aur server start karne se pehle <code>RAPIDAPI_KEY</code> environment variable me daalo — key kabhi code ya demo me mat daalo.</li>" +
+    "<li>Phir Flask version me Train Info page kholo.</li></ol>" +
+    '<p class="muted">Note: train ki live jaankari aur ticket booking alag cheezein hain — booking ke liye New Booking use karo.</p></div>' +
+    disabledForm("Do stations ke beech trains", ["From station code", "To station code"]) +
+    disabledForm("Live running status", ["Train number"]) +
+    disabledForm("PNR status", ["10-digit PNR"]);
+}
+
 // ---------- Router ----------
-var VIEWS = ["home", "masters", "booking", "bookings", "ticket", "reports", "auth"];
+var VIEWS = ["home", "masters", "booking", "bookings", "ticket", "reports", "auth", "traininfo"];
 function showView(name) {
   VIEWS.forEach(function (v) {
     document.getElementById("view-" + v).style.display = (v === name ? "block" : "none");
@@ -688,6 +833,7 @@ function showView(name) {
   if (name === "bookings") renderBookings();
   if (name === "reports") renderReports();
   if (name === "auth") renderAuth();
+  if (name === "traininfo") renderTrainInfo();
   updateNav();
 }
 updateNav();
