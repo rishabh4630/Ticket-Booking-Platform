@@ -734,6 +734,7 @@ header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);bo
 .nav-links{order:3;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
 .nav-auth{order:2;margin-left:auto}
 .route-card{cursor:pointer}
+@media print{header,.noprint{display:none}}
 </style></head><body>
 <video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
@@ -1444,7 +1445,8 @@ def ticket(book_no):
     <tr><th>Total fare</th><td><b>Rs. {total}</b> ({len(seats)} seat(s) x Rs. {transport["r_major"]})</td></tr>
     <tr><th>Payment mode</th><td>{payment["pname"] if payment else "-"}</td></tr>
     </table>
-    <p><a class="btn secondary" href="/booking/{book_no}/cancel">Cancel Booking</a>
+    <p class="noprint"><button onclick="window.print()">Print Ticket</button>
+    <a class="btn secondary" href="/booking/{book_no}/cancel">Cancel Booking</a>
     <a class="btn secondary" href="/bookings">All Bookings</a></p></div>"""
     return page(f"Ticket {book_no}", body)
 
