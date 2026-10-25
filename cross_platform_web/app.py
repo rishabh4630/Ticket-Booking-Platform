@@ -127,6 +127,25 @@ def weather_label(code):
     return "mausam uplabdh nahi"
 
 
+def aqi_label(aqi):
+    """US AQI value -> short label."""
+    try:
+        aqi = float(aqi)
+    except (TypeError, ValueError):
+        return ""
+    if aqi <= 50:
+        return "Good"
+    if aqi <= 100:
+        return "Moderate"
+    if aqi <= 150:
+        return "Unhealthy for Sensitive Groups"
+    if aqi <= 200:
+        return "Unhealthy"
+    if aqi <= 300:
+        return "Very Unhealthy"
+    return "Hazardous"
+
+
 def fmt_distance(metres):
     if metres < 10000:
         return f"{metres / 1000:.1f} km"
@@ -161,9 +180,10 @@ def resolve_coords(city):
     return None
 
 
-def route_info(from_city, to_city):
-    """Road distance + driving time + destination weather. Never raises;
-    returns a dict that may be partial or empty when a service fails."""
+def route_info(from_city, to_city, travel_date=None):
+    """Road distance + driving time + destination weather, air quality,
+    travel-date forecast and a destination guide. Never raises; returns a
+    dict that may be partial or empty when a service fails."""
     info = {}
     try:
         start = resolve_coords(from_city)
@@ -189,6 +209,59 @@ def route_info(from_city, to_city):
                     f"{current['temperature_2m']}°C, "
                     f"{weather_label(current.get('weather_code'))}"
                 )
+            # Destination air quality (Open-Meteo Air Quality API, keyless).
+            data = _fetch_json(
+                "https://air-quality-api.open-meteo.com/v1/air-quality"
+                f"?latitude={dest[0]}&longitude={dest[1]}&current=us_aqi,pm2_5",
+                timeout=4,
+            )
+            current = (data or {}).get("current") or {}
+            if current.get("us_aqi") is not None:
+                label = aqi_label(current["us_aqi"])
+                pm = current.get("pm2_5")
+                info["aqi"] = f"AQI {current['us_aqi']} ({label})" + (
+                    f", PM2.5 {pm} µg/m³" if pm is not None else "")
+            # Travel-date forecast (Open-Meteo daily). Only when the date is
+            # within the ~16-day forecast window; otherwise skipped silently.
+            if travel_date:
+                try:
+                    d = date.fromisoformat(travel_date)
+                    if 0 <= (d - date.today()).days <= 16:
+                        data = _fetch_json(
+                            "https://api.open-meteo.com/v1/forecast"
+                            f"?latitude={dest[0]}&longitude={dest[1]}"
+                            "&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset"
+                            "&timezone=Asia%2FKolkata"
+                            f"&start_date={travel_date}&end_date={travel_date}",
+                            timeout=4,
+                        )
+                        daily = (data or {}).get("daily") or {}
+                        if (daily.get("time") or []):
+                            info["travel_weather"] = (
+                                f"{d.strftime('%d %b')} ko: "
+                                f"{daily['temperature_2m_max'][0]}°C / {daily['temperature_2m_min'][0]}°C, "
+                                f"{weather_label(daily['weather_code'][0])}"
+                            )
+                            sr = (daily.get("sunrise") or [""])[0]
+                            ss = (daily.get("sunset") or [""])[0]
+                            if sr and ss:
+                                info["sun"] = f"Suryaoday {sr[11:16]}, Suryaast {ss[11:16]}"
+                except (ValueError, KeyError, IndexError, TypeError):
+                    pass
+            # Destination guide (Wikipedia summary, keyless).
+            data = _fetch_json(
+                "https://en.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(to_city),
+                timeout=4,
+                headers={"User-Agent": "TSN-Ticket-Booking/1.0 (student demo)"},
+            )
+            if data and data.get("extract"):
+                text = data["extract"]
+                if len(text) > 300:
+                    text = text[:300].rsplit(" ", 1)[0] + "…"
+                thumb = (data.get("thumbnail") or {}).get("source", "")
+                page = ((data.get("content_urls") or {}).get("desktop") or {}).get("page", "")
+                info["guide"] = {"title": data.get("title") or to_city,
+                                 "text": text, "thumb": thumb, "url": page}
     except Exception:
         pass
     return info
@@ -1027,24 +1100,39 @@ def search():
         <p class="muted">No transport matches this search. Try different cities,
         any transport type, or browse the <a href="/masters/transports">Transports</a> list.</p></div>"""
     selected = {"from": from_city, "to": to_city, "date": travel_date, "type": type_id}
-    # Route info strip (free OSRM + Open-Meteo data). External failures only
-    # hide pieces of the strip -- the results below always still render.
+    # Route info strip (free OSRM + Open-Meteo + Wikipedia data). External
+    # failures only hide pieces of the strip -- the results below always render.
     strip = ""
     if from_city and to_city:
-        info = route_info(from_city, to_city)
-        if info:
-            parts = []
-            if "distance" in info:
-                parts.append(f"Road distance: {info['distance']}")
-            if "duration" in info:
-                parts.append(f"Driving time: {info['duration']}")
-            if "weather" in info:
-                parts.append(f"{html.escape(to_city)} ka mausam: {html.escape(info['weather'])}")
+        info = route_info(from_city, to_city, travel_date)
+        parts = []
+        if "distance" in info:
+            parts.append(f"Road distance: {info['distance']}")
+        if "duration" in info:
+            parts.append(f"Driving time: {info['duration']}")
+        if "weather" in info:
+            parts.append(f"{html.escape(to_city)} ka mausam: {html.escape(info['weather'])}")
+        if "aqi" in info:
+            parts.append(f"{html.escape(to_city)} ki hawa: {html.escape(info['aqi'])}")
+        if "travel_weather" in info:
+            parts.append(f"Travel date {html.escape(info['travel_weather'])}")
+        if "sun" in info:
+            parts.append(html.escape(info["sun"]))
+        if parts:
             strip = ('<div class="card route-info"><p><b>Route info:</b> '
                      + " &middot; ".join(parts) + "</p>"
-                     '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather). '
+                     '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather, air quality, forecast) / '
+                     "Wikipedia (destination guide). "
                      "Ye sirf jaankari hai — booking ke liye neeche wale transports use karo.</p></div>")
-        else:
+        if "guide" in info:
+            g = info["guide"]
+            img = (f'<img src="{html.escape(g["thumb"], quote=True)}" alt="{html.escape(to_city)}" '
+                   'style="max-width:100%;border-radius:8px">') if g["thumb"] else ""
+            src = (f' <a href="{html.escape(g["url"], quote=True)}">Wikipedia</a>') if g["url"] else ""
+            strip += (f'<div class="card"><h3>{html.escape(g["title"])} ke baare me</h3>{img}'
+                      f'<p>{html.escape(g["text"])}</p>'
+                      f'<p class="muted">Source:{src}.</p></div>')
+        if not strip:
             strip = ('<div class="card route-info"><p class="muted">Route/weather info '
                      "uplabdh nahi hai (live service se data nahi mila). "
                      "Search results neeche hain.</p></div>")
@@ -1321,6 +1409,23 @@ def new_booking():
             flash("Please check the form values (seat numbers must be numbers).")
             return redirect(url_for("new_booking"))
         transport = db.execute("SELECT * FROM transports WHERE tid=?", (tid,)).fetchone()
+        # Typed name wins over the dropdown: reuse the matching customer, or
+        # create one (it then appears in Masters -> Customers too).
+        new_name = (f.get("new_cust_name") or "").strip()
+        if new_name:
+            existing = db.execute(
+                "SELECT cust_code FROM cust_det WHERE LOWER(cust_name)=LOWER(?) ORDER BY id LIMIT 1",
+                (new_name,),
+            ).fetchone()
+            if existing:
+                cust_code = existing["cust_code"]
+            else:
+                cust_code = next_code(db, "customers", "cust_code")
+                db.execute("INSERT INTO customers VALUES (?,?,?,?,?,?)",
+                           (cust_code, "", None, None, None, ""))
+                db.execute("INSERT INTO cust_det (cust_code, cust_name, age, sex) VALUES (?,?,?,?)",
+                           (cust_code, new_name, None, ""))
+                db.commit()
         cust = db.execute(
             "SELECT cust_name FROM cust_det WHERE cust_code=? ORDER BY id LIMIT 1",
             (cust_code,),
@@ -1372,6 +1477,7 @@ def new_booking():
     body = f"""<div class="card"><h2>New Booking</h2><form method="post" id="bookForm">
     <label>Transport<select name="tid" id="tidSel">{transport_opts}</select></label>
     {select_field("cust_code", "Customer", [(c["cust_code"], c["cust_name"] or f'Customer {c["cust_code"]}') for c in customers])}
+    <label>Or new customer name (if not in the list)<input name="new_cust_name" placeholder="e.g. Aarav Kumar"></label>
     <label>Travel date<input name="book_date" type="date" required value="{pre_date}"></label>
     {select_field("pmode_id", "Payment mode", [(p["pmid"], p["pname"]) for p in payments])}
     <label>Seat numbers (comma-separated, e.g. 1, 2, 3)<input name="seats" required placeholder="1, 2"></label>

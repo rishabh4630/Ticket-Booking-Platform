@@ -633,6 +633,14 @@ function weatherLabel(code) {
   if (code >= 95) return "Aandhi-toofan";
   return "mausam uplabdh nahi";
 }
+function aqiLabel(aqi) {
+  if (aqi <= 50) return "Good";
+  if (aqi <= 100) return "Moderate";
+  if (aqi <= 150) return "Unhealthy for Sensitive Groups";
+  if (aqi <= 200) return "Unhealthy";
+  if (aqi <= 300) return "Very Unhealthy";
+  return "Hazardous";
+}
 function fetchTimeout(url, ms) {
   var c = new AbortController();
   var t = setTimeout(function () { c.abort(); }, ms);
@@ -646,7 +654,7 @@ function resolveCoords(city) {
     .then(function (d) { return (d && d.length) ? [parseFloat(d[0].lat), parseFloat(d[0].lon)] : null; })
     .catch(function () { return null; });
 }
-function loadRouteInfo(from, to) {
+function loadRouteInfo(from, to, date) {
   var el = document.getElementById("home-route-info");
   if (!el) return;
   if (!from || !to) { el.innerHTML = ""; return; }
@@ -667,21 +675,72 @@ function loadRouteInfo(from, to) {
           .then(function (d) { return (d && d.current) ? d.current : null; })
           .catch(function () { return null; })
       : Promise.resolve(null);
-    return Promise.all([routeJob, weatherJob]);
+    var aqiJob = b
+      ? fetchTimeout("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + b[0] + "&longitude=" + b[1] +
+          "&current=us_aqi,pm2_5", 6000)
+          .then(function (r) { return r.json(); })
+          .then(function (d) { return (d && d.current) ? d.current : null; })
+          .catch(function () { return null; })
+      : Promise.resolve(null);
+    var travelJob = (function () {
+      if (!b || !date) return Promise.resolve(null);
+      var d = new Date(date + "T00:00:00");
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      var diff = Math.round((d - today) / 86400000);
+      if (isNaN(d.getTime()) || diff < 0 || diff > 16) return Promise.resolve(null);
+      return fetchTimeout("https://api.open-meteo.com/v1/forecast?latitude=" + b[0] + "&longitude=" + b[1] +
+        "&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset&timezone=Asia%2FKolkata" +
+        "&start_date=" + date + "&end_date=" + date, 6000)
+        .then(function (r) { return r.json(); })
+        .then(function (d2) { return (d2 && d2.daily && d2.daily.time && d2.daily.time.length) ? d2.daily : null; })
+        .catch(function () { return null; });
+    })();
+    var guideJob = fetchTimeout("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(to), 6000)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { return (d && d.extract) ? d : null; })
+      .catch(function () { return null; });
+    return Promise.all([routeJob, weatherJob, aqiJob, travelJob, guideJob]);
   }).then(function (res) {
-    var route = res[0], weather = res[1];
+    var route = res[0], weather = res[1], aqi = res[2], travel = res[3], guide = res[4];
     var parts = [];
     if (route) { parts.push("Road distance: " + fmtKm(route.distance)); parts.push("Driving time: " + fmtDur(route.duration)); }
     if (weather && weather.temperature_2m !== undefined) {
       parts.push(esc(to) + " ka mausam: " + weather.temperature_2m + "°C, " + weatherLabel(weather.weather_code));
     }
-    if (!parts.length) {
+    if (aqi && aqi.us_aqi !== undefined) {
+      var aqiText = "AQI " + aqi.us_aqi + " (" + aqiLabel(aqi.us_aqi) + ")";
+      if (aqi.pm2_5 !== undefined) aqiText += ", PM2.5 " + aqi.pm2_5 + " µg/m³";
+      parts.push(esc(to) + " ki hawa: " + aqiText);
+    }
+    if (travel) {
+      var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      var dd = new Date(date + "T00:00:00");
+      var dLabel = dd.getDate() + " " + months[dd.getMonth()];
+      parts.push("Travel date " + dLabel + " ko: " + travel.temperature_2m_max[0] + "°C / " +
+        travel.temperature_2m_min[0] + "°C, " + weatherLabel(travel.weather_code[0]));
+      if (travel.sunrise && travel.sunrise[0] && travel.sunset && travel.sunset[0]) {
+        parts.push("Suryaoday " + travel.sunrise[0].slice(11, 16) + ", Suryaast " + travel.sunset[0].slice(11, 16));
+      }
+    }
+    var guideHtml = "";
+    if (guide) {
+      var text = guide.extract;
+      if (text.length > 300) text = text.slice(0, 300).split(" ").slice(0, -1).join(" ") + "…";
+      var img = (guide.thumbnail && guide.thumbnail.source)
+        ? '<img src="' + esc(guide.thumbnail.source) + '" alt="' + esc(to) + '" style="max-width:100%;border-radius:8px">' : "";
+      var src = (guide.content_urls && guide.content_urls.desktop && guide.content_urls.desktop.page)
+        ? ' <a href="' + esc(guide.content_urls.desktop.page) + '">Wikipedia</a>' : "";
+      guideHtml = '<div class="card"><h3>' + esc(guide.title || to) + ' ke baare me</h3>' + img +
+        "<p>" + esc(text) + "</p>" + '<p class="muted">Source:' + src + ".</p></div>";
+    }
+    if (!parts.length && !guideHtml) {
       el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info uplabdh nahi hai ' +
         "(live service se data nahi mila). Search results neeche hain.</p></div>";
     } else {
-      el.innerHTML = '<div class="card route-info"><p><b>Route info:</b> ' + parts.join(" &middot; ") + "</p>" +
-        '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather). Ye sirf jaankari hai — ' +
-        "booking ke liye neeche wale transports use karo.</p></div>";
+      var stripHtml = parts.length ? '<div class="card route-info"><p><b>Route info:</b> ' + parts.join(" &middot; ") + "</p>" +
+        '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather, air quality, forecast) / Wikipedia (destination guide). Ye sirf jaankari hai — ' +
+        "booking ke liye neeche wale transports use karo.</p></div>" : "";
+      el.innerHTML = stripHtml + guideHtml;
     }
   }).catch(function () {
     el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info uplabdh nahi hai. Search results neeche hain.</p></div>';
@@ -694,7 +753,7 @@ function doHomeSearch() {
   var typeId = parseInt(document.getElementById("hs_type").value, 10) || 0;
   var date = document.getElementById("hs_date").value;
   renderSearchResults(searchTransports(from, to, typeId), date);
-  loadRouteInfo(from, to);
+  loadRouteInfo(from, to, date);
 }
 function bookTransport(tid, date) {
   if (!requireLogin()) return;
