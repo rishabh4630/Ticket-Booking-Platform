@@ -733,6 +733,7 @@ header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);bo
 .topbar{row-gap:0}
 .nav-links{order:3;width:100%;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.18)}
 .nav-auth{order:2;margin-left:auto}
+.route-card{cursor:pointer}
 </style></head><body>
 <video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
@@ -930,11 +931,11 @@ def home():
             "SELECT via FROM route_det WHERE rid=? ORDER BY id", (r["rid"],)
         ).fetchall()
         via_text = ", ".join(v["via"] for v in via)
-        route_cards += f"""<div class="card route-card"><h3>{r["st_pos"]} &rarr; {r["dest"]}</h3>
+        route_cards += f"""<div class="card route-card" onclick="window.location='/search?from={r["st_pos"]}&to={r["dest"]}'"><h3>{r["st_pos"]} &rarr; {r["dest"]}</h3>
         <p class="muted">{r["r_name"]}{" &middot; Via: " + via_text if via_text else ""}</p>
         <p class="fare">From Rs. {cheapest["r_major"]} per seat</p>
-        <p><a class="btn" href="/booking/new?tid={cheapest["tid"]}">Book</a>
-        <a class="btn secondary" href="/search?from={r["st_pos"]}&to={r["dest"]}">View Transports</a></p></div>"""
+        <p><a class="btn" href="/booking/new?tid={cheapest["tid"]}" onclick="event.stopPropagation()">Book</a>
+        <a class="btn secondary" href="/search?from={r["st_pos"]}&to={r["dest"]}" onclick="event.stopPropagation()">View Transports</a></p></div>"""
     stats = "".join(
         f'<div class="card stat"><div class="muted">{k}</div><b>{v}</b></div>'
         for k, v in counts.items()
@@ -1564,6 +1565,14 @@ def train_info():
             else:
                 data, err = rapidapi_get(TRAIN_API["search"], {"query": query})
                 result = train_result_html("Train search", data, err)
+        elif kind == "schedule":
+            train_no = request.form.get("train_no", "").strip()
+            if not re.match(r"^\d{4,5}$", train_no):
+                result = '<div class="card"><p>Train number 4-5 digits ka hona chahiye.</p></div>'
+            else:
+                path = TRAIN_API["schedule"].format(train_no=train_no)
+                data, err = rapidapi_get(path, {})
+                result = train_result_html("Train schedule", data, err)
         else:
             result = '<div class="card"><p>Unknown form.</p></div>'
     if not key_set:
@@ -1594,7 +1603,11 @@ def train_info():
         <div class="card"><h3>Train dhoondo (naam/number se)</h3><form method="post">
         <input type="hidden" name="form_kind" value="search">
         <label>Train naam ya number<input name="query" placeholder="e.g. 12301" required></label>
-        <p><button>Search Train</button></p></form></div>"""
+        <p><button>Search Train</button></p></form></div>
+        <div class="card"><h3>Train schedule</h3><form method="post">
+        <input type="hidden" name="form_kind" value="schedule">
+        <label>Train number<input name="train_no" placeholder="e.g. 12301" required></label>
+        <p><button>View Schedule</button></p></form></div>"""
         if result:
             body = result + body
     return page("Train Info", body)

@@ -65,7 +65,7 @@ booking form and the total on the ticket.
 ## Seed data (demo data)
 
 On a fresh database the app seeds demo data only — not real schedules or
-fares: 4 states, 5 cities, 4 streets, 3 transport types, 3 routes, 4
+fares: 18 states, 28 cities, 4 streets, 3 transport types, 42 routes, 88
 transports, 2 payment modes (Cash, Cheque) and 2 customers. The database
 tables are adapted from `../docs/tables/tnstb.sql` (Oracle types converted
 to SQLite integer/text).
