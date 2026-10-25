@@ -950,7 +950,7 @@ function showTicket(bookNo) {
   var p = paymentById(b.pmodeId);
   var total = t ? calcFare(t, b.seats.length) : 0;
   document.getElementById("view-ticket").innerHTML =
-    '<div class="card"><h2>Ticket - Booking ' + b.bookNo + "</h2><table>" +
+    '<div class="card" id="ticket-card"><h2>Ticket - Booking ' + b.bookNo + "</h2><table>" +
     "<tr><th>Customer</th><td>" + esc(b.custName) + "</td></tr>" +
     "<tr><th>Transport</th><td>" + esc(t ? t.name + " (" + t.from + " to " + t.to + ")" : "-") + "</td></tr>" +
     "<tr><th>Departure / Arrival</th><td>" + esc(t ? t.dep + " / " + t.arr : "-") + "</td></tr>" +
@@ -960,12 +960,24 @@ function showTicket(bookNo) {
     "<tr><th>Total fare</th><td><b>Rs. " + total + "</b> (" + b.seats.length + " seat(s) x Rs. " + (t ? t.rMajor : 0) + ")</td></tr>" +
     "<tr><th>Payment mode</th><td>" + esc(p ? p.name : "-") + "</td></tr></table>" +
     '<p class="noprint"><button onclick="window.print()">Print Ticket</button> ' +
+    '<button onclick="downloadTicketPDF(' + b.bookNo + ')">Download PDF</button> ' +
     '<button class="secondary" onclick="confirmCancel(' + b.bookNo + ')">Cancel Booking</button> ' +
     '<button class="secondary" onclick="showView(\'bookings\')">All Bookings</button></p></div>';
   ["view-home", "view-masters", "view-booking", "view-bookings", "view-reports", "view-auth"].forEach(function (id) {
     document.getElementById(id).style.display = "none";
   });
   document.getElementById("view-ticket").style.display = "block";
+}
+function downloadTicketPDF(bookNo) {
+  var el = document.getElementById("ticket-card");
+  if (!el) { window.print(); return; }
+  function go() { html2pdf().set({margin: 10, filename: "TSN-Ticket-" + bookNo + ".pdf", html2canvas: {scale: 2}, jsPDF: {unit: "mm", format: "a4", orientation: "portrait"}}).from(el).save(); }
+  if (window.html2pdf) { go(); return; }
+  var s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+  s.onload = go;
+  s.onerror = function () { window.print(); };
+  document.head.appendChild(s);
 }
 function confirmCancel(bookNo) {
   var b = bookings.find(function (x) { return x.bookNo === bookNo; });
