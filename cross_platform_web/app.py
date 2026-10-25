@@ -461,6 +461,10 @@ def init_db():
         );
         """
     )
+    # Migration: profile settings (default departure city) live in users.prefs.
+    ucols = [r[1] for r in db.execute("PRAGMA table_info(users)")]
+    if "prefs" not in ucols:
+        db.execute("ALTER TABLE users ADD COLUMN prefs TEXT NOT NULL DEFAULT '{}'")
     # Demo seed data (labelled as demo in the README). Only on a fresh DB.
     if db.execute("SELECT COUNT(*) FROM transports").fetchone()[0] == 0:
         db.executemany(
@@ -837,6 +841,41 @@ table{display:block;max-width:100%;overflow-x:auto}
 .search-grid{grid-template-columns:1fr}
 .grid{grid-template-columns:1fr}
 }
+/* ---- Profile & Settings: manual theme overrides (beat the system media query) ---- */
+html[data-theme="dark"]{--bg:#0a1727;--surface:#12273f;--ink:#e9f2fb;--muted:#9db6cf;--line:#24405f;--light:#173452;--shadow:0 12px 32px rgba(0,0,0,.5);--shadow-lg:0 20px 44px rgba(0,0,0,.55);--shadow-hover:0 18px 38px rgba(0,0,0,.6);--focus:0 0 0 3px rgba(74,168,236,.45)}
+html[data-theme="dark"] header{background:linear-gradient(100deg,#021a33 0%,#063B78 55%,#0a6cb8 100%);box-shadow:0 8px 24px rgba(0,0,0,.55)}
+html[data-theme="dark"] .hero{background:linear-gradient(125deg,#021a33 0%,#063B78 40%,#0a6cb8 75%,#2f8fd4 100%)}
+html[data-theme="dark"] .stat b,html[data-theme="dark"] .route-card .fare,html[data-theme="dark"] .footer h4{color:#8ec9f5}
+html[data-theme="dark"] .search-card,html[data-theme="dark"] .footer{background:var(--surface)}
+html[data-theme="dark"] button.secondary,html[data-theme="dark"] .btn.secondary{background:var(--surface);color:#dbeeff}
+html[data-theme="dark"] input,html[data-theme="dark"] select,html[data-theme="dark"] textarea{background:#0d1f36;color:var(--ink)}
+html[data-theme="dark"] .tabs button{background:var(--surface);color:#dbeeff}
+html[data-theme="dark"] .pill{background:var(--light);color:#bfe0fa}
+html[data-theme="dark"] .flash{background:#3a2e08;border-color:#6b5a1d;color:#ffe9a8}
+html[data-theme="dark"] .video-bg{opacity:.45}
+html[data-theme="dark"] .video-overlay{background:linear-gradient(120deg,rgba(2,15,30,.72) 0%,rgba(4,31,61,.55) 45%,rgba(6,59,120,.30) 100%)}
+html[data-theme="light"]{--navy:#063B78;--blue:#0878D1;--light:#EAF5FF;--bg:#f4f8fc;--surface:#fff;--ink:#12283e;--muted:#5d6f84;--line:#dbe7f3;--shadow:0 12px 32px rgba(6,59,120,.12);--shadow-lg:0 20px 44px rgba(6,59,120,.16);--shadow-hover:0 18px 38px rgba(6,59,120,.18);--focus:0 0 0 3px rgba(8,120,209,.30)}
+html[data-theme="light"] header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);box-shadow:0 8px 24px rgba(4,41,79,.35)}
+html[data-theme="light"] .hero{background:linear-gradient(125deg,#04294f 0%,var(--navy) 32%,var(--blue) 64%,#63b6f2 100%)}
+html[data-theme="light"] .stat b,html[data-theme="light"] .route-card .fare,html[data-theme="light"] .footer h4{color:var(--navy)}
+html[data-theme="light"] .search-card,html[data-theme="light"] .footer{background:color-mix(in srgb,var(--surface) 94%,transparent)}
+html[data-theme="light"] button.secondary,html[data-theme="light"] .btn.secondary{background:#fff;color:var(--navy)}
+html[data-theme="light"] input,html[data-theme="light"] select,html[data-theme="light"] textarea{background:#fff;color:var(--ink)}
+html[data-theme="light"] .tabs button{background:#fff;color:var(--navy)}
+html[data-theme="light"] .pill{color:var(--navy)}
+html[data-theme="light"] .flash{background:#fff3cd;border-color:#ffe08a;color:var(--ink)}
+html[data-theme="light"] .video-bg{opacity:1}
+html[data-theme="light"] .video-overlay{background:linear-gradient(120deg,rgba(4,41,79,.68) 0%,rgba(6,59,120,.48) 45%,rgba(8,120,209,.30) 100%)}
+.profile-hero{background:linear-gradient(120deg,var(--navy),var(--blue));color:#fff;border-radius:20px;padding:26px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow-lg)}
+.profile-avatar{width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.55);display:grid;place-items:center;font-size:1.6rem;font-weight:800;flex:none}
+.profile-hero h2{margin:0;color:#fff}
+.profile-hero p{margin:5px 0 0;color:#dbeeff}
+.role-pill{display:inline-block;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:999px;padding:3px 12px;font-size:.85rem;font-weight:600;margin-top:8px}
+.pstat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
+.pstat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.pstat b{font-size:1.4rem;display:block}
+.pstat span{color:var(--muted);font-size:.85rem}
+@media(max-width:600px){.pstat-grid{grid-template-columns:1fr}}
 </style></head><body>
 <video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4" media="(min-width:601px)"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
@@ -852,6 +891,7 @@ table{display:block;max-width:100%;overflow-x:auto}
 </nav>
 <nav class="nav-auth">
 {% if session.get('user_id') %}
+<a href="{{ url_for('profile') }}">Profile</a>
 <a href="{{ url_for('logout') }}">Logout ({{ session.get('user_name','') }})</a>
 {% else %}
 <a href="{{ url_for('login') }}">Login</a>
@@ -868,7 +908,11 @@ table{display:block;max-width:100%;overflow-x:auto}
 
 
 def page(title, body, **ctx):
-    return render_template_string(LAYOUT, title=title, body=body, **ctx)
+    layout = LAYOUT
+    theme = request.cookies.get("theme", "")
+    if theme in ("dark", "light"):
+        layout = layout.replace('<html lang="en">', f'<html lang="en" data-theme="{theme}">', 1)
+    return render_template_string(layout, title=title, body=body, **ctx)
 
 
 def table_html(rows, cols):
@@ -972,6 +1016,152 @@ def logout():
     return redirect(url_for("home"))
 
 
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    db = get_db()
+    user = current_user()
+    try:
+        prefs = json.loads(user["prefs"] or "{}") if user["prefs"] else {}
+    except Exception:
+        prefs = {}
+    if not isinstance(prefs, dict):
+        prefs = {}
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "edit_name":
+            name = request.form.get("name", "").strip()
+            if not name:
+                flash("Name cannot be empty.")
+            else:
+                db.execute("UPDATE users SET name=? WHERE id=?", (name, user["id"]))
+                db.commit()
+                session["user_name"] = name
+                flash("Name updated.")
+        elif action == "change_password":
+            cur = request.form.get("current_password", "")
+            new = request.form.get("new_password", "")
+            new2 = request.form.get("new_password2", "")
+            urow = db.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
+            if not check_password_hash(urow["password_hash"], cur):
+                flash("Current password is incorrect.")
+            elif len(new) < 8 or not re.search(r"[A-Za-z]", new) or not re.search(r"[0-9]", new):
+                flash("Password must be at least 8 characters and include both letters and numbers.")
+            elif new != new2:
+                flash("New passwords do not match.")
+            else:
+                db.execute("UPDATE users SET password_hash=? WHERE id=?",
+                           (generate_password_hash(new), user["id"]))
+                db.commit()
+                flash("Password changed.")
+        elif action == "settings":
+            theme = request.form.get("theme", "system")
+            prefs["default_from"] = request.form.get("default_from", "")
+            db.execute("UPDATE users SET prefs=? WHERE id=?", (json.dumps(prefs), user["id"]))
+            db.commit()
+            resp = redirect(url_for("profile"))
+            if theme in ("dark", "light"):
+                resp.set_cookie("theme", theme, max_age=31536000)
+            else:
+                resp.delete_cookie("theme")
+            flash("Settings saved.")
+            return resp
+        elif action == "clear_bookings":
+            if request.form.get("confirm") == "yes":
+                db.execute("DELETE FROM booking_seats WHERE book_no IN "
+                           "(SELECT book_no FROM bookings WHERE user_id=?)", (user["id"],))
+                db.execute("DELETE FROM bookings WHERE user_id=?", (user["id"],))
+                db.commit()
+                flash("Your bookings have been cleared.")
+            else:
+                flash("Please tick the confirmation box.")
+        elif action == "delete_account":
+            if request.form.get("confirm") != "yes":
+                flash("Please tick the confirmation box.")
+            else:
+                urow = db.execute("SELECT password_hash FROM users WHERE id=?", (user["id"],)).fetchone()
+                if not check_password_hash(urow["password_hash"], request.form.get("password", "")):
+                    flash("Password is incorrect. Account was not deleted.")
+                else:
+                    db.execute("DELETE FROM booking_seats WHERE book_no IN "
+                               "(SELECT book_no FROM bookings WHERE user_id=?)", (user["id"],))
+                    db.execute("DELETE FROM bookings WHERE user_id=?", (user["id"],))
+                    db.execute("DELETE FROM users WHERE id=?", (user["id"],))
+                    db.commit()
+                    session.clear()
+                    flash("Account deleted.")
+                    return redirect(url_for("home"))
+        return redirect(url_for("profile"))
+    seat_sql = "(SELECT COUNT(*) FROM booking_seats s WHERE s.book_no=b.book_no)"
+    stats = db.execute(
+        f"SELECT COUNT(*) c, COALESCE(SUM({seat_sql}),0) seats, "
+        f"COALESCE(SUM({seat_sql} * t.r_major),0) spent "
+        "FROM bookings b JOIN transports t ON t.tid=b.tid WHERE b.user_id=?",
+        (user["id"],)).fetchone()
+    latest = db.execute(
+        f"SELECT b.*, t.tname, t.st_pos, t.dest, {seat_sql} seats, {seat_sql} * t.r_major fare "
+        "FROM bookings b JOIN transports t ON t.tid=b.tid "
+        "WHERE b.user_id=? ORDER BY b.book_no DESC LIMIT 5", (user["id"],)).fetchall()
+    cities = db.execute("SELECT city_name FROM cities ORDER BY city_name").fetchall()
+    initials = "".join(w[0] for w in user["name"].split()[:2]).upper()
+    theme = request.cookies.get("theme", "system")
+    rows = ""
+    for r in latest:
+        rows += (f'<tr><td><b>{r["book_no"]}</b></td><td>{r["book_date"]}</td>'
+                 f'<td>{html.escape(r["tname"])} ({html.escape(r["st_pos"])} &rarr; {html.escape(r["dest"])})</td>'
+                 f'<td>{r["seats"]}</td><td>Rs. {r["fare"]}</td>'
+                 f'<td><a class="btn secondary" href="{url_for("ticket", book_no=r["book_no"])}">Ticket</a></td></tr>')
+    if not rows:
+        rows = '<tr><td colspan="6">Abhi koi booking nahi hai.</td></tr>'
+    city_opts = "".join(
+        f'<option value="{html.escape(c["city_name"])}"{" selected" if c["city_name"] == prefs.get("default_from", "") else ""}>{html.escape(c["city_name"])}</option>'
+        for c in cities)
+    confirm_card = ""
+    if request.args.get("confirm") == "delete":
+        confirm_card = f"""<div class="card"><h3>Account delete karein?</h3>
+        <p>Ye action wapas nahi hoga: tumhara account aur tumhari saari bookings delete ho jayengi.</p>
+        <form method="post"><input type="hidden" name="action" value="delete_account">
+        <label>Password<input type="password" name="password" required></label>
+        <label><input type="checkbox" name="confirm" value="yes" required> Haan, mera account delete karo</label>
+        <button type="submit" style="background:#b42318">Delete my account</button>
+        <a class="btn secondary" href="{url_for("profile")}">Wapas</a></form></div>"""
+    body = f"""<div class="profile-hero"><div class="profile-avatar">{html.escape(initials)}</div>
+    <div><h2>{html.escape(user["name"])}</h2><p>{html.escape(user["email"])}</p>
+    <span class="role-pill">{html.escape(user["role"])}</span></div>
+    <div style="margin-left:auto;text-align:right"><p style="margin:0;color:#dbeeff;font-size:.85rem">Web version account<br>is app ke database me save hai</p></div></div>
+    <div class="pstat-grid"><div class="pstat"><b>{stats["c"]}</b><span>Total bookings</span></div>
+    <div class="pstat"><b>{stats["seats"]}</b><span>Seats book ki</span></div>
+    <div class="pstat"><b>Rs. {stats["spent"]}</b><span>Total kharcha</span></div></div>
+    <div class="card" style="margin-top:16px"><h3>Meri haal ki bookings</h3>
+    <table><tr><th>No.</th><th>Date</th><th>Transport</th><th>Seats</th><th>Fare</th><th></th></tr>{rows}</table>
+    <p><a class="btn" href="{url_for("bookings")}">Saari bookings dekho</a></p></div>
+    <div class="card"><h3>Account</h3>
+    <form method="post"><input type="hidden" name="action" value="edit_name">
+    <label>Full name<input name="name" value="{html.escape(user["name"])}" required></label>
+    <button type="submit">Naam save karo</button></form>
+    <form method="post" style="margin-top:16px"><input type="hidden" name="action" value="change_password">
+    <label>Current password<input type="password" name="current_password" required></label>
+    <label>Naya password<input type="password" name="new_password" required placeholder="Kam se kam 8 characters, letter + number"></label>
+    <label>Naya password dobara<input type="password" name="new_password2" required></label>
+    <button type="submit">Password change karo</button></form></div>
+    <div class="card"><h3>Settings</h3>
+    <form method="post"><input type="hidden" name="action" value="settings">
+    <p>Theme<br>
+    <label><input type="radio" name="theme" value="system"{" checked" if theme == "system" else ""}> System</label>
+    <label><input type="radio" name="theme" value="light"{" checked" if theme == "light" else ""}> Light</label>
+    <label><input type="radio" name="theme" value="dark"{" checked" if theme == "dark" else ""}> Dark</label></p>
+    <label>Default departure city (home search me pehle se chuna hoga)
+    <select name="default_from"><option value="">Koi nahi</option>{city_opts}</select></label>
+    <button type="submit">Settings save karo</button></form></div>
+    <div class="card"><h3>Danger zone</h3><p class="muted">Ye actions sirf tumhare account par lagenge.</p>
+    <form method="post" style="display:inline"><input type="hidden" name="action" value="clear_bookings">
+    <label><input type="checkbox" name="confirm" value="yes" required> Meri bookings clear karo</label>
+    <button type="submit">Clear my bookings</button></form>
+    <p style="margin-top:12px"><a class="btn" style="background:#b42318" href="{url_for("profile")}?confirm=delete">Account delete karo</a></p></div>
+    {confirm_card}"""
+    return page("Profile & Settings", body)
+
+
 # ---------------------------------------------------------------------------
 # Shared footer (shown on the home and search pages only, so other pages
 # keep their existing layout exactly)
@@ -1029,6 +1219,14 @@ def home():
     ).fetchall()
     cities = db.execute("SELECT * FROM cities ORDER BY city_name").fetchall()
     types = db.execute("SELECT * FROM transport_types ORDER BY ttid").fetchall()
+    _pref = ""
+    if "user_id" in session:
+        _prow = db.execute("SELECT prefs FROM users WHERE id=?", (session["user_id"],)).fetchone()
+        if _prow and _prow[0]:
+            try:
+                _pref = json.loads(_prow[0]).get("default_from", "") or ""
+            except Exception:
+                _pref = ""
     # Popular Routes on home: first 9 routes only (originals + trunk
     # corridors). All routes stay searchable and visible under Masters.
     routes = db.execute("SELECT * FROM routes ORDER BY rid LIMIT 9").fetchall()
@@ -1055,7 +1253,7 @@ def home():
     body = f"""<div class="hero"><p class="eyebrow">Bus &amp; Train Booking</p><h1>Your journey begins here.</h1>
     <p>Book bus and train tickets across the network &mdash; transparent fares,
     seats of your choice, and instant cancellation.</p>
-    {search_card(cities, types)}</div>
+    {search_card(cities, types, {"from": _pref} if _pref else {})}</div>
     <div class="trust">
     <div class="card"><h3>&#10003; Transparent fares</h3><p class="muted">What you see is what you pay: total = seats &times; the transport's major (r_major) rate. No hidden charges.</p></div>
     <div class="card"><h3>&#10003; Seat of your choice</h3><p class="muted">Pick your own seat numbers. A seat already booked for the same transport and date can never be sold twice.</p></div>

@@ -46,6 +46,11 @@ Requirements: Python 3 + Flask (`pip install -r requirements.txt`).
   the code itself is never shown on the site. All other accounts stay
   customers. Customers see and cancel only their own bookings; admins
   see all bookings and the reports.
+- **Profile & Settings** — `/profile` (login required): premium profile
+  card with booking stats and recent bookings, edit name, change
+  password, theme (System/Light/Dark), default departure city for the
+  home search, plus clear-my-bookings and delete-account in the danger
+  zone.
 
 ## Fare rule
 
