@@ -101,33 +101,33 @@ def _fetch_json(url, timeout=5, headers=None):
 
 
 def weather_label(code):
-    """WMO weather code -> short Hinglish-friendly label."""
+    """WMO weather code -> short English label."""
     if code is None:
-        return "mausam uplabdh nahi"
+        return "Weather unavailable"
     code = int(code)
     if code == 0:
-        return "Saaf aasmaan"
+        return "Clear sky"
     if code == 1:
-        return "Zyaada tar saaf"
+        return "Mostly clear"
     if code == 2:
-        return "Halke baadal"
+        return "Light clouds"
     if code == 3:
-        return "Baadal"
+        return "Overcast"
     if code in (45, 48):
-        return "Kohra"
+        return "Fog"
     if code in (51, 53, 55, 56, 57):
-        return "Halki boondabaandi"
+        return "Light drizzle"
     if code in (61, 80):
-        return "Halki baarish"
+        return "Light rain"
     if code in (63, 81):
-        return "Baarish"
+        return "Rain"
     if code in (65, 82, 66, 67):
-        return "Tez baarish"
+        return "Heavy rain"
     if code in (71, 73, 75, 77, 85, 86):
-        return "Barf"
+        return "Snow"
     if code in (95, 96, 99):
-        return "Aandhi-toofan"
-    return "mausam uplabdh nahi"
+        return "Thunderstorm"
+    return "Weather unavailable"
 
 
 def aqi_label(aqi):
@@ -212,8 +212,10 @@ def _email_deliverable(email):
 #   SMTP_USER (your Gmail address), SMTP_PASS (a Gmail App Password --
 #   Google Account -> Security -> 2-Step Verification -> App passwords),
 #   SMTP_FROM (optional, defaults to SMTP_USER).
-# When SMTP_USER/SMTP_PASS are unset, signup falls back to creating the
-# account immediately (the previous behaviour) so the app still runs.
+# OTP is mandatory: when SMTP_USER/SMTP_PASS are unset, signup is blocked
+# and NO account is created — the user must configure mail first, then
+# sign up again. This is deliberate: an account must never be created
+# without a verified mailbox.
 # ---------------------------------------------------------------------------
 def _mail_configured():
     return bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASS"))
@@ -227,7 +229,9 @@ def _send_otp_email(to_email, otp):
     except ValueError:
         port = 587
     user = os.environ.get("SMTP_USER", "")
-    pw = os.environ.get("SMTP_PASS", "")
+    # App passwords are shown with spaces ("xxxx xxxx xxxx xxxx"); Gmail
+    # accepts them without spaces, so strip spaces before logging in.
+    pw = os.environ.get("SMTP_PASS", "").replace(" ", "")
     sender = os.environ.get("SMTP_FROM", user)
     if not user or not pw:
         return False
@@ -244,7 +248,10 @@ def _send_otp_email(to_email, otp):
             server.login(user, pw)
             server.sendmail(sender, [to_email], msg)
         return True
-    except Exception:
+    except Exception as e:
+        # Visible in the terminal running Flask, so a failed send is no
+        # longer silent. The exception never contains the password.
+        print(f"[otp] could not send verification email to {to_email}: {e}")
         return False
 
 
@@ -333,14 +340,14 @@ def route_info(from_city, to_city, travel_date=None):
                         daily = (data or {}).get("daily") or {}
                         if (daily.get("time") or []):
                             info["travel_weather"] = (
-                                f"{d.strftime('%d %b')} ko: "
+                                f"{d.strftime('%d %b')}: "
                                 f"{daily['temperature_2m_max'][0]}°C / {daily['temperature_2m_min'][0]}°C, "
                                 f"{weather_label(daily['weather_code'][0])}"
                             )
                             sr = (daily.get("sunrise") or [""])[0]
                             ss = (daily.get("sunset") or [""])[0]
                             if sr and ss:
-                                info["sun"] = f"Suryaoday {sr[11:16]}, Suryaast {ss[11:16]}"
+                                info["sun"] = f"Sunrise {sr[11:16]}, Sunset {ss[11:16]}"
                 except (ValueError, KeyError, IndexError, TypeError):
                     pass
             # Destination guide (Wikipedia summary, keyless).
@@ -1062,22 +1069,16 @@ def register():
         if db.execute("SELECT id FROM users WHERE email=?", (f["email"].strip(),)).fetchone():
             flash("That email is already registered. Please log in.")
             return redirect(url_for("login"))
-        if _mail_configured():
-            sent = _start_pending(db, f["name"].strip(), f["email"].strip(), generate_password_hash(f["password"]))
-            session["pending_email"] = f["email"].strip()
-            if sent:
-                flash("We have emailed you a 6-digit verification code. Please enter it below.")
-            else:
-                flash("We could not send the verification email. Please tap Resend code below.")
-            return redirect(url_for("verify"))
-        db.execute(
-            "INSERT INTO users (name, email, password_hash, role) VALUES (?,?,?,?)",
-            (f["name"].strip(), f["email"].strip(),
-             generate_password_hash(f["password"]), "customer"),
-        )
-        db.commit()
-        flash("Account created. Please log in.")
-        return redirect(url_for("login"))
+        if not _mail_configured():
+            flash("Email verification is not set up on this server yet, so no account was created. Please set SMTP_USER and SMTP_PASS, restart the app, and sign up again.")
+            return redirect(url_for("register"))
+        sent = _start_pending(db, f["name"].strip(), f["email"].strip(), generate_password_hash(f["password"]))
+        session["pending_email"] = f["email"].strip()
+        if sent:
+            flash("We have emailed you a 6-digit verification code. Please enter it below.")
+        else:
+            flash("We could not send the verification email, so your account has not been created yet. Please check the mail setup (SMTP_USER / SMTP_PASS) and tap Resend code below.")
+        return redirect(url_for("verify"))
     body = """<div class="card"><h2>Create your account</h2><form method="post">
     """ + field("name", "Full name") + field("email", "Email", type="email") + \
         field("password", "Password", type="password") + """
@@ -1498,9 +1499,9 @@ def search():
         if "duration" in info:
             parts.append(f"Driving time: {info['duration']}")
         if "weather" in info:
-            parts.append(f"{html.escape(to_city)} ka mausam: {html.escape(info['weather'])}")
+            parts.append(f"{html.escape(to_city)} weather: {html.escape(info['weather'])}")
         if "aqi" in info:
-            parts.append(f"{html.escape(to_city)} ki hawa: {html.escape(info['aqi'])}")
+            parts.append(f"{html.escape(to_city)} air quality: {html.escape(info['aqi'])}")
         if "travel_weather" in info:
             parts.append(f"Travel date {html.escape(info['travel_weather'])}")
         if "sun" in info:
@@ -1510,19 +1511,19 @@ def search():
                      + " &middot; ".join(parts) + "</p>"
                      '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather, air quality, forecast) / '
                      "Wikipedia (destination guide). "
-                     "Ye sirf jaankari hai — booking ke liye neeche wale transports use karo.</p></div>")
+                     "This is for information only — use the transports below to book.</p></div>")
         if "guide" in info:
             g = info["guide"]
             img = (f'<img src="{html.escape(g["thumb"], quote=True)}" alt="{html.escape(to_city)}" '
                    'style="max-width:100%;border-radius:8px">') if g["thumb"] else ""
             src = (f' <a href="{html.escape(g["url"], quote=True)}">Wikipedia</a>') if g["url"] else ""
-            strip += (f'<div class="card"><h3>{html.escape(g["title"])} ke baare me</h3>{img}'
+            strip += (f'<div class="card"><h3>About {html.escape(g["title"])}</h3>{img}'
                       f'<p>{html.escape(g["text"])}</p>'
                       f'<p class="muted">Source:{src}.</p></div>')
         if not strip:
             strip = ('<div class="card route-info"><p class="muted">Route/weather info '
-                     "uplabdh nahi hai (live service se data nahi mila). "
-                     "Search results neeche hain.</p></div>")
+                     "is unavailable (no data from the live service). "
+                     "Search results are below.</p></div>")
     body = f"""<div class="hero"><h1>Search Transports</h1>
     <p>Find a transport for your route and book in a few clicks.</p>
     {search_card(cities, types, selected)}</div>
@@ -2105,7 +2106,7 @@ def train_info():
         <p>Stations ke beech trains, live running status, PNR aur train search — sab ek hi jagah.</p></div>
         <div class="card">
         <p class="muted">Live data RapidAPI "Indian Railway API" (free plan) se aata hai.
-        Ye sirf jaankari hai — isse ticket book nahi hota, booking ke liye
+        This is for information only — isse ticket book nahi hota, booking ke liye
         <a href="/booking/new">New Booking</a> use karo.</p></div>
         <div class="card"><h3>Do stations ke beech trains</h3><form method="post">
         <input type="hidden" name="form_kind" value="between">
