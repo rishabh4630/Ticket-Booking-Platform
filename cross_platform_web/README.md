@@ -112,4 +112,4 @@ python3 app.py
 Gmail App Password: Google Account → Security → 2-Step Verification ON →
 App passwords → generate one for "Mail" and use it as `SMTP_PASS`. Never
 paste it in chat or commit it. Without `SMTP_USER`/`SMTP_PASS`, signup
-falls back to creating the account immediately (no OTP step).
+is blocked and no account is created — OTP is mandatory.
