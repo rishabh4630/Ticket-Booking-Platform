@@ -828,7 +828,7 @@ header{background:var(--navy);color:#fff;position:sticky;top:0;z-index:10}
 .brand span{display:block;font-size:.75rem;font-weight:400;color:#cfe6fb}.nav-links{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.nav-links a{font-weight:700;font-size:.95rem;letter-spacing:.2px;padding:8px 12px;border-radius:10px}.nav-links a:hover{background:rgba(255,255,255,.16)}.nav-auth{display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap;padding-left:14px;border-left:1px solid rgba(255,255,255,.25)}.nav-auth a{font-weight:600;padding:8px 10px;border-radius:10px}.nav-auth a:hover{background:rgba(255,255,255,.16)}.topbar a.brand{font-weight:800}@media (max-width:600px){.nav-auth{margin-left:0;padding-left:0;border-left:0}}
 main{max-width:1100px;margin:0 auto;padding:22px 20px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
-.hero{background:linear-gradient(120deg,var(--navy),var(--blue) 55%,#5db2f0);color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
+.hero{background:linear-gradient(120deg,rgba(6,59,120,.80),rgba(8,120,209,.62) 55%,rgba(93,178,240,.45));color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
 .hero h1{margin:0 0 6px}
 .hero p{margin:0;color:#dbeeff}
 table{width:100%;border-collapse:collapse}
@@ -865,7 +865,7 @@ h2{letter-spacing:-.01em;line-height:1.25}
 main>h2{margin:26px 0 14px}
 .card{padding:22px;margin-bottom:20px;transition:transform var(--ease),box-shadow var(--ease);animation:rise .5s ease both}
 .card:hover{transform:translateY(-2px);box-shadow:var(--shadow-hover)}
-.hero{background:linear-gradient(125deg,#04294f 0%,var(--navy) 32%,var(--blue) 64%,#63b6f2 100%);padding:34px 32px;margin-bottom:26px;box-shadow:var(--shadow-lg);animation:rise .5s ease both}
+.hero{background:linear-gradient(125deg,rgba(4,41,79,.80) 0%,rgba(6,59,120,.68) 32%,rgba(8,120,209,.52) 64%,rgba(99,182,242,.38) 100%);padding:34px 32px;margin-bottom:26px;box-shadow:var(--shadow-lg);animation:rise .5s ease both}
 .hero h1{font-size:clamp(1.7rem,3vw,2.3rem);font-weight:800;letter-spacing:-.02em;line-height:1.15;margin:0 0 8px}
 .hero p{font-size:1.05rem;line-height:1.55}
 .eyebrow{font-size:.78rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);margin:0 0 6px}
@@ -896,7 +896,7 @@ th,td{padding:10px 12px}
 @media (prefers-color-scheme:dark){
 :root{--bg:#0a1727;--surface:#12273f;--ink:#e9f2fb;--muted:#9db6cf;--line:#24405f;--light:#173452;--shadow:0 12px 32px rgba(0,0,0,.5);--shadow-lg:0 20px 44px rgba(0,0,0,.55);--shadow-hover:0 18px 38px rgba(0,0,0,.6);--focus:0 0 0 3px rgba(74,168,236,.45)}
 header{background:#041f3d}
-.hero{background:linear-gradient(125deg,#021a33 0%,#063B78 40%,#0a6cb8 75%,#2f8fd4 100%)}
+.hero{background:linear-gradient(125deg,rgba(2,26,51,.88) 0%,rgba(6,59,120,.78) 40%,rgba(10,108,184,.62) 75%,rgba(47,143,212,.48) 100%)}
 .stat b,.route-card .fare,.footer h4{color:#8ec9f5}
 .search-card,.footer{background:var(--surface)}
 button.secondary,.btn.secondary{background:var(--surface);color:#dbeeff}
@@ -912,6 +912,13 @@ html{background:var(--bg)}
 body{background:transparent}
 .video-bg{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2;pointer-events:none}
 .video-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(120deg,rgba(4,41,79,.68) 0%,rgba(6,59,120,.48) 45%,rgba(8,120,209,.30) 100%)}
+.hero h1,.hero p{text-shadow:0 2px 12px rgba(0,0,0,.45)}
+.hero{position:relative;overflow:hidden}
+.hero-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none}
+.hero-shade{position:absolute;inset:0;z-index:1;background:linear-gradient(125deg,rgba(4,41,79,.72) 0%,rgba(6,59,120,.55) 32%,rgba(8,120,209,.38) 64%,rgba(99,182,242,.25) 100%)}
+.hero-inner{position:relative;z-index:2}
+@media (prefers-reduced-motion:reduce){.hero-video{display:none}}
+
 .card,.search-card,.footer{background:color-mix(in srgb,var(--surface) 94%,transparent)}
 @media (prefers-color-scheme:dark){.video-bg{opacity:.45}.video-overlay{background:linear-gradient(120deg,rgba(2,15,30,.72) 0%,rgba(4,31,61,.55) 45%,rgba(6,59,120,.30) 100%)}}
 @media (prefers-reduced-motion:reduce){.video-bg,.video-overlay{display:none}}
@@ -943,7 +950,7 @@ table{display:block;max-width:100%;overflow-x:auto}
 /* ---- Profile & Settings: manual theme overrides (beat the system media query) ---- */
 html[data-theme="dark"]{--bg:#0a1727;--surface:#12273f;--ink:#e9f2fb;--muted:#9db6cf;--line:#24405f;--light:#173452;--shadow:0 12px 32px rgba(0,0,0,.5);--shadow-lg:0 20px 44px rgba(0,0,0,.55);--shadow-hover:0 18px 38px rgba(0,0,0,.6);--focus:0 0 0 3px rgba(74,168,236,.45)}
 html[data-theme="dark"] header{background:linear-gradient(100deg,#021a33 0%,#063B78 55%,#0a6cb8 100%);box-shadow:0 8px 24px rgba(0,0,0,.55)}
-html[data-theme="dark"] .hero{background:linear-gradient(125deg,#021a33 0%,#063B78 40%,#0a6cb8 75%,#2f8fd4 100%)}
+html[data-theme="dark"] .hero{background:linear-gradient(125deg,rgba(2,26,51,.88) 0%,rgba(6,59,120,.78) 40%,rgba(10,108,184,.62) 75%,rgba(47,143,212,.48) 100%)}
 html[data-theme="dark"] .stat b,html[data-theme="dark"] .route-card .fare,html[data-theme="dark"] .footer h4{color:#8ec9f5}
 html[data-theme="dark"] .search-card,html[data-theme="dark"] .footer{background:var(--surface)}
 html[data-theme="dark"] button.secondary,html[data-theme="dark"] .btn.secondary{background:var(--surface);color:#dbeeff}
@@ -955,7 +962,7 @@ html[data-theme="dark"] .video-bg{opacity:.45}
 html[data-theme="dark"] .video-overlay{background:linear-gradient(120deg,rgba(2,15,30,.72) 0%,rgba(4,31,61,.55) 45%,rgba(6,59,120,.30) 100%)}
 html[data-theme="light"]{--navy:#063B78;--blue:#0878D1;--light:#EAF5FF;--bg:#f4f8fc;--surface:#fff;--ink:#12283e;--muted:#5d6f84;--line:#dbe7f3;--shadow:0 12px 32px rgba(6,59,120,.12);--shadow-lg:0 20px 44px rgba(6,59,120,.16);--shadow-hover:0 18px 38px rgba(6,59,120,.18);--focus:0 0 0 3px rgba(8,120,209,.30)}
 html[data-theme="light"] header{background:linear-gradient(100deg,#04294f 0%,#063B78 55%,#0878D1 100%);box-shadow:0 8px 24px rgba(4,41,79,.35)}
-html[data-theme="light"] .hero{background:linear-gradient(125deg,#04294f 0%,var(--navy) 32%,var(--blue) 64%,#63b6f2 100%)}
+html[data-theme="light"] .hero{background:linear-gradient(125deg,rgba(4,41,79,.80) 0%,rgba(6,59,120,.68) 32%,rgba(8,120,209,.52) 64%,rgba(99,182,242,.38) 100%)}
 html[data-theme="light"] .stat b,html[data-theme="light"] .route-card .fare,html[data-theme="light"] .footer h4{color:var(--navy)}
 html[data-theme="light"] .search-card,html[data-theme="light"] .footer{background:color-mix(in srgb,var(--surface) 94%,transparent)}
 html[data-theme="light"] button.secondary,html[data-theme="light"] .btn.secondary{background:#fff;color:var(--navy)}
@@ -976,7 +983,7 @@ html[data-theme="light"] .video-overlay{background:linear-gradient(120deg,rgba(4
 .pstat span{color:var(--muted);font-size:.85rem}
 @media(max-width:600px){.pstat-grid{grid-template-columns:1fr}}
 </style></head><body>
-<video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/13879887/13879887-uhd_3840_2160_60fps.mp4" type="video/mp4" media="(min-width:601px)"><source src="https://videos.pexels.com/video-files/13879887/13879887-hd_1920_1080_60fps.mp4" type="video/mp4"></video>
+<video class="video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/8290926/8290926-uhd_3840_2160_30fps.mp4" type="video/mp4" media="(min-width:601px)"><source src="https://videos.pexels.com/video-files/8290926/8290926-hd_1920_1080_30fps.mp4" type="video/mp4"></video>
 <div class="video-overlay" aria-hidden="true"></div>
 <header><div class="topbar">
 <a class="brand" href="{{ url_for('home') }}">TSN Ticket Booking<span>Transport Service Network - Web Version</span></a>
@@ -1415,10 +1422,10 @@ def home():
         f'<div class="card stat"><div class="muted">{k}</div><b>{v}</b></div>'
         for k, v in counts.items()
     )
-    body = f"""<div class="hero"><p class="eyebrow">Bus &amp; Train Booking</p><h1>Your journey begins here.</h1>
+    body = f"""<div class="hero"><video class="hero-video" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/8290926/8290926-hd_1920_1080_30fps.mp4" type="video/mp4"></video><div class="hero-shade" aria-hidden="true"></div><div class="hero-inner"><p class="eyebrow">Bus &amp; Train Booking</p><h1>Your journey begins here.</h1>
     <p>Book bus and train tickets across the network &mdash; transparent fares,
     seats of your choice, and instant cancellation.</p>
-    {search_card(cities, types, {"from": _pref} if _pref else {})}</div>
+    {search_card(cities, types, {"from": _pref} if _pref else {})}</div></div>
     <div class="trust">
     <div class="card"><h3>&#10003; Transparent fares</h3><p class="muted">What you see is what you pay: total = seats &times; the transport's major (r_major) rate. No hidden charges.</p></div>
     <div class="card"><h3>&#10003; Seat of your choice</h3><p class="muted">Pick your own seat numbers. A seat already booked for the same transport and date can never be sold twice.</p></div>
