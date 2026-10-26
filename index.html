@@ -701,7 +701,7 @@ function loadRouteInfo(from, to, date) {
   var el = document.getElementById("home-route-info");
   if (!el) return;
   if (!from || !to) { el.innerHTML = ""; return; }
-  el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info load ho rahi hai...</p></div>';
+  el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info loading...</p></div>';
   Promise.all([resolveCoords(from), resolveCoords(to)]).then(function (coords) {
     var a = coords[0], b = coords[1];
     var routeJob = (a && b)
@@ -778,11 +778,11 @@ function loadRouteInfo(from, to, date) {
     }
     if (!parts.length && !guideHtml) {
       el.innerHTML = '<div class="card route-info"><p class="muted">Route/weather info is unavailable ' +
-        "(live service se data nahi mila). Search results are below.</p></div>";
+        "(no data from the live service). Search results are below.</p></div>";
     } else {
       var stripHtml = parts.length ? '<div class="card route-info"><p><b>Route info:</b> ' + parts.join(" &middot; ") + "</p>" +
         '<p class="muted">Live data: OSRM (road route) / Open-Meteo (weather, air quality, forecast) / Wikipedia (destination guide). This is for information only — ' +
-        "booking ke liye neeche wale transports use karo.</p></div>" : "";
+        "use the transports below to book.</p></div>" : "";
       el.innerHTML = stripHtml + guideHtml;
     }
   }).catch(function () {
