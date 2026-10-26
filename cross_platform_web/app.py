@@ -1422,7 +1422,7 @@ def home():
         f'<div class="card stat"><div class="muted">{k}</div><b>{v}</b></div>'
         for k, v in counts.items()
     )
-    body = f"""<div class="hero"><video class="hero-video" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/8290926/8290926-hd_1920_1080_30fps.mp4" type="video/mp4"></video><div class="hero-shade" aria-hidden="true"></div><div class="hero-inner"><p class="eyebrow">Bus &amp; Train Booking</p><h1>Your journey begins here.</h1>
+    body = f"""<div class="hero"><video class="hero-video" autoplay muted loop playsinline preload="auto" aria-hidden="true"><source src="https://videos.pexels.com/video-files/8290926/8290926-uhd_3840_2160_30fps.mp4" type="video/mp4" media="(min-width:601px)"><source src="https://videos.pexels.com/video-files/8290926/8290926-hd_1920_1080_30fps.mp4" type="video/mp4"></video><div class="hero-shade" aria-hidden="true"></div><div class="hero-inner"><p class="eyebrow">Bus &amp; Train Booking</p><h1>Your journey begins here.</h1>
     <p>Book bus and train tickets across the network &mdash; transparent fares,
     seats of your choice, and instant cancellation.</p>
     {search_card(cities, types, {"from": _pref} if _pref else {})}</div></div>
