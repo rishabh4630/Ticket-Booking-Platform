@@ -1223,12 +1223,13 @@ function submitAuth() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { flashMsg("Please enter a valid email address (e.g. name@example.com)."); return; }
     if (pass.length < 8 || !/[a-z]/.test(pass) || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) { flashMsg("Password must be at least 8 characters with uppercase, lowercase and a number."); return; }
     flashMsg("Verifying email…");
-    fetchTimeout("https://disify.com/api/email/" + encodeURIComponent(em), 6000)
+    fetchTimeout("https://disify.com/api/email/" + encodeURIComponent(em), 15000)
       .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; })
       .then(function(d){
-        if (!d) { flashMsg("Email could not be verified. Please try again."); return; }
-        if (d.dns === false) { flashMsg("This email domain cannot receive email. Please use a valid email address."); return; }
-        if (d.disposable === true) { flashMsg("Temporary/disposable emails are not allowed. Please use your real email."); return; }
+        if (d) {
+          if (d.dns === false) { flashMsg("This email domain cannot receive email. Please use a valid email address."); return; }
+          if (d.disposable === true) { flashMsg("Temporary/disposable emails are not allowed. Please use your real email."); return; }
+        }
         var err = signUp(nm, email, pass);
         if (err) { flashMsg(err); return; }
         flashMsg("Account created. Please log in.");
