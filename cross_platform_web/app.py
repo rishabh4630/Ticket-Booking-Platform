@@ -45,7 +45,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.path.join(BASE_DIR, "ticket_booking.db")
 
 app = Flask(__name__)
-app.secret_key = "tsn-ticket-booking-dev-key-change-me"
+app.secret_key = os.environ.get("SECRET_KEY", "tsn-ticket-booking-dev-key-change-me")
 
 # Admin access: set ADMIN_EMAIL in the environment before starting the app.
 # Logging in with that email becomes admin. If it is not set, no account
